@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, takeUntil } from 'rxjs';
@@ -8,6 +8,9 @@ import { WorkspaceService } from '../services/workspace.service';
 import { FilterService } from '../services/filter.service';
 import { FileInfo, FileType } from '@shared/protocol';
 import { WorkspaceConfig, TabInfo, FilterQuery } from '@shared/protocol-enhanced';
+import { KeyboardHelpComponent } from './keyboard-help.component';
+import { KeyboardService } from '../services/keyboard.service';
+import { ShortcutCallbacks, ShortcutRegistryService } from '../services/shortcut-registry.service';
 
 interface BrowserPane {
   id: string;
@@ -25,11 +28,14 @@ interface BrowserPane {
 @Component({
   selector: 'app-file-browser',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KeyboardHelpComponent],
   templateUrl: './file-browser.component.html',
   styleUrls: ['./file-browser.component.scss']
 })
 export class FileBrowserComponent implements OnInit, OnDestroy {
+  @ViewChild(KeyboardHelpComponent) keyboardHelp?: KeyboardHelpComponent;
+
+
   leftPane: BrowserPane = this.createEmptyPane('left');
   rightPane: BrowserPane = this.createEmptyPane('right');
   
@@ -45,7 +51,9 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   constructor(
     private apiService: ApiService,
     private workspaceService: WorkspaceService,
-    private filterService: FilterService
+    private filterService: FilterService,
+    private keyboardService: KeyboardService,
+    private shortcutRegistry: ShortcutRegistryService
   ) {}
 
   ngOnInit(): void {
@@ -67,6 +75,9 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
     // Check server connection
     this.checkServerConnection();
+
+    // Register keyboard shortcuts
+    this.registerKeyboardShortcuts();
   }
 
   ngOnDestroy(): void {
@@ -460,5 +471,289 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
     await this.refresh(this.leftPane);
     await this.refresh(this.rightPane);
+  }
+
+  /**
+   * Register all keyboard shortcuts
+   */
+  private registerKeyboardShortcuts(): void {
+    const callbacks: ShortcutCallbacks = {
+      // Navigation
+      openGlobalSearch: () => this.openGlobalSearch(),
+      showPathHistory: () => this.showPathHistory(),
+      quickPathJump: () => this.quickPathJump(),
+      navigateUp: () => this.navigateUpCurrent(),
+      refresh: () => this.refreshCurrent(),
+      showKeyboardHelp: () => this.keyboardHelp?.show(),
+
+      // Tabs
+      newTab: () => this.addTabCurrent(),
+      closeTab: () => this.closeTabCurrent(),
+      nextTab: () => this.nextTabCurrent(),
+      previousTab: () => this.previousTabCurrent(),
+      jumpToTab: (index) => this.jumpToTabCurrent(index),
+      togglePinTab: () => this.togglePinCurrentTab(),
+
+      // File operations
+      quickView: () => this.quickViewSelected(),
+      openItem: () => this.openSelectedItem(),
+      deleteSelected: () => this.deleteSelectedCurrent(),
+      copySelected: () => this.copySelectedToClipboard(),
+      cutSelected: () => this.cutSelectedToClipboard(),
+      paste: () => this.pasteFromClipboard(),
+      selectAll: () => this.selectAllCurrent(),
+      deselectAll: () => this.deselectAllCurrent(),
+      newFolder: () => this.createNewFolderCurrent(),
+      renameSelected: () => this.renameSelectedCurrent(),
+
+      // Search
+      focusFilter: () => this.focusFilterCurrent(),
+      advancedFilter: () => this.showAdvancedFilter(),
+      clearFilter: () => this.clearFilterCurrent(),
+
+      // Workspace
+      showWorkspaceSwitcher: () => this.toggleWorkspaceMenu(),
+      newWorkspace: () => this.createNewWorkspace(),
+      toggleHiddenFiles: () => this.toggleShowHidden(),
+
+      // Pane
+      switchPane: () => this.switchActivePaneInternal(),
+      copyToOtherPane: () => this.copyToOtherPaneCurrent(),
+      moveToOtherPane: () => this.moveToOtherPaneCurrent(),
+      focusAddressBar: () => this.focusAddressBarCurrent(),
+    };
+
+    this.shortcutRegistry.registerAllShortcuts(callbacks);
+  }
+
+  // ============================================================================
+  // Keyboard Shortcut Implementations
+  // ============================================================================
+
+  private activePaneId: 'left' | 'right' = 'left';
+
+  private getActivePane() {
+    return this.activePaneId === 'left' ? this.leftPane : this.rightPane;
+  }
+
+  private switchActivePaneInternal(): void {
+    this.activePaneId = this.activePaneId === 'left' ? 'right' : 'left';
+    // Add visual feedback (optional)
+    console.log('Active pane:', this.activePaneId);
+  }
+
+  // Navigation shortcuts
+  private openGlobalSearch(): void {
+    // TODO: Implement global search modal (Phase 2)
+    console.log('Global search - coming in Phase 2');
+  }
+
+  private showPathHistory(): void {
+    // TODO: Implement path history modal (Phase 2)
+    console.log('Path history - coming in Phase 2');
+  }
+
+  private quickPathJump(): void {
+    // TODO: Implement quick path jump (Phase 2)
+    console.log('Quick path jump - coming in Phase 2');
+  }
+
+  private navigateUpCurrent(): void {
+    const pane = this.getActivePane();
+    this.navigateToParent(pane);
+  }
+
+  private refreshCurrent(): void {
+    const pane = this.getActivePane();
+    this.refresh(pane);
+  }
+
+  // Tab shortcuts
+  private addTabCurrent(): void {
+    const pane = this.getActivePane();
+    this.addTab(pane);
+  }
+
+  private closeTabCurrent(): void {
+    const pane = this.getActivePane();
+    const tabs = this.getTabs(pane.id);
+    const activeTab = tabs.find(t => t.isActive);
+    if (activeTab) {
+      this.closeTab(pane, activeTab.id);
+    }
+  }
+
+  private nextTabCurrent(): void {
+    const pane = this.getActivePane();
+    const tabs = this.getTabs(pane.id);
+    const currentIndex = tabs.findIndex(t => t.isActive);
+    const nextIndex = (currentIndex + 1) % tabs.length;
+    this.switchTab(pane, tabs[nextIndex].id);
+  }
+
+  private previousTabCurrent(): void {
+    const pane = this.getActivePane();
+    const tabs = this.getTabs(pane.id);
+    const currentIndex = tabs.findIndex(t => t.isActive);
+    const prevIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
+    this.switchTab(pane, tabs[prevIndex].id);
+  }
+
+  private jumpToTabCurrent(index: number): void {
+    const pane = this.getActivePane();
+    const tabs = this.getTabs(pane.id);
+    if (index > 0 && index <= tabs.length) {
+      this.switchTab(pane, tabs[index - 1].id);
+    }
+  }
+
+  private togglePinCurrentTab(): void {
+    const pane = this.getActivePane();
+    const tabs = this.getTabs(pane.id);
+    const activeTab = tabs.find(t => t.isActive);
+    if (activeTab) {
+      this.toggleTabPin(pane, activeTab.id, new Event('click'));
+    }
+  }
+
+  // File operation shortcuts
+  private quickViewSelected(): void {
+    // TODO: Implement quick view (Phase 3)
+    console.log('Quick view - coming in Phase 3');
+  }
+
+  private openSelectedItem(): void {
+    const pane = this.getActivePane();
+    const selected = Array.from(pane.selectedFiles);
+    if (selected.length === 1) {
+      const entry = pane.entries.find(e => e.path === selected[0]);
+      if (entry) {
+        this.navigateToPath(pane, entry);
+      }
+    }
+  }
+
+  private deleteSelectedCurrent(): void {
+    const pane = this.getActivePane();
+    this.deleteSelected(pane);
+  }
+
+  private clipboard: { operation: 'copy' | 'cut', paths: string[] } | null = null;
+
+  private copySelectedToClipboard(): void {
+    const pane = this.getActivePane();
+    if (pane.selectedFiles.size > 0) {
+      this.clipboard = {
+        operation: 'copy',
+        paths: Array.from(pane.selectedFiles),
+      };
+      console.log('Copied to clipboard:', this.clipboard.paths.length, 'items');
+    }
+  }
+
+  private cutSelectedToClipboard(): void {
+    const pane = this.getActivePane();
+    if (pane.selectedFiles.size > 0) {
+      this.clipboard = {
+        operation: 'cut',
+        paths: Array.from(pane.selectedFiles),
+      };
+      console.log('Cut to clipboard:', this.clipboard.paths.length, 'items');
+    }
+  }
+
+  private async pasteFromClipboard(): Promise<void> {
+    if (!this.clipboard) {
+      console.log('Clipboard is empty');
+      return;
+    }
+
+    const targetPane = this.getActivePane();
+    const operation = this.clipboard.operation;
+
+    for (const sourcePath of this.clipboard.paths) {
+      const fileName = sourcePath.split('/').pop() || 'file';
+      const destPath = `${targetPane.currentPath}/${fileName}`.replace('//', '/');
+
+      try {
+        if (operation === 'copy') {
+          await this.apiService.copyFile(sourcePath, destPath, true);
+        } else {
+          await this.apiService.moveFile(sourcePath, destPath);
+        }
+      } catch (error: any) {
+        console.error(`Failed to ${operation} ${sourcePath}:`, error);
+        alert(`Failed to ${operation}: ${error.message}`);
+      }
+    }
+
+    if (operation === 'cut') {
+      this.clipboard = null; // Clear after cut+paste
+    }
+
+    await this.refresh(targetPane);
+  }
+
+  private selectAllCurrent(): void {
+    const pane = this.getActivePane();
+    pane.selectedFiles.clear();
+    pane.filteredEntries.forEach(entry => {
+      pane.selectedFiles.add(entry.path);
+    });
+  }
+
+  private deselectAllCurrent(): void {
+    const pane = this.getActivePane();
+    pane.selectedFiles.clear();
+  }
+
+  private createNewFolderCurrent(): void {
+    const pane = this.getActivePane();
+    this.createNewFolder(pane);
+  }
+
+  private renameSelectedCurrent(): void {
+    // TODO: Implement rename functionality
+    console.log('Rename - to be implemented');
+  }
+
+  // Search shortcuts
+  private focusFilterCurrent(): void {
+    const pane = this.getActivePane();
+    const filterInput = document.querySelector(
+      `.pane:nth-child(${this.activePaneId === 'left' ? 1 : 2}) .filter-input`
+    ) as HTMLInputElement;
+    filterInput?.focus();
+  }
+
+  private showAdvancedFilter(): void {
+    // TODO: Implement advanced filter dialog
+    console.log('Advanced filter - to be implemented');
+  }
+
+  private clearFilterCurrent(): void {
+    const pane = this.getActivePane();
+    this.clearFilter(pane);
+  }
+
+  // Pane shortcuts
+  private copyToOtherPaneCurrent(): void {
+    const sourcePane = this.getActivePane();
+    const targetPane = this.activePaneId === 'left' ? this.rightPane : this.leftPane;
+    this.copyToOtherPane(sourcePane, targetPane);
+  }
+
+  private moveToOtherPaneCurrent(): void {
+    const sourcePane = this.getActivePane();
+    const targetPane = this.activePaneId === 'left' ? this.rightPane : this.leftPane;
+    this.moveToOtherPane(sourcePane, targetPane);
+  }
+
+  private focusAddressBarCurrent(): void {
+    const addressInput = document.querySelector(
+      `.pane:nth-child(${this.activePaneId === 'left' ? 1 : 2}) .address-input`
+    ) as HTMLInputElement;
+    addressInput?.focus();
+    addressInput?.select();
   }
 }

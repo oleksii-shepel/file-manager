@@ -1,0 +1,97 @@
+<div class="keyboard-help-overlay" *ngIf="isVisible" (click)="hide()">
+  <div class="keyboard-help-modal" (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="modal-header">
+      <h2>⌨️ Keyboard Shortcuts</h2>
+      <button class="btn-close" (click)="hide()" title="Close (Esc)">✕</button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-bar">
+      <input
+        type="text"
+        [(ngModel)]="searchText"
+        (ngModelChange)="onSearchChange()"
+        placeholder="Search shortcuts..."
+        class="search-input"
+        autofocus
+      />
+      <button
+        *ngIf="searchText"
+        (click)="clearSearch()"
+        class="btn-clear"
+        title="Clear search"
+      >
+        ✕
+      </button>
+    </div>
+
+    <!-- Shortcuts List -->
+    <div class="shortcuts-list">
+      <div *ngIf="filteredCategories.length === 0" class="no-results">
+        No shortcuts found for "{{ searchText }}"
+      </div>
+
+      <div *ngFor="let category of filteredCategories" class="shortcut-category">
+        <h3 class="category-name">{{ category.name }}</h3>
+        
+        <div class="shortcuts">
+          <div 
+            *ngFor="let shortcut of category.shortcuts"
+            class="shortcut-item"
+            [class.disabled]="shortcut.enabled === false"
+          >
+            <div class="shortcut-left">
+              <span class="shortcut-key">{{ formatShortcut(shortcut) }}</span>
+              <span class="shortcut-description">{{ shortcut.description }}</span>
+            </div>
+            
+            <div class="shortcut-right">
+              <label class="toggle-switch">
+                <input
+                  type="checkbox"
+                  [checked]="shortcut.enabled !== false"
+                  (change)="toggleShortcut(shortcut)"
+                />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <div class="footer-left">
+        <button (click)="exportConfig()" class="btn-secondary">
+          Export Config
+        </button>
+        <button (click)="fileInput.click()" class="btn-secondary">
+          Import Config
+        </button>
+        <input
+          #fileInput
+          type="file"
+          accept=".json"
+          (change)="importConfig($event)"
+          style="display: none"
+        />
+      </div>
+      
+      <div class="footer-right">
+        <button (click)="resetToDefaults()" class="btn-secondary">
+          Reset to Defaults
+        </button>
+        <button (click)="hide()" class="btn-primary">
+          Close
+        </button>
+      </div>
+    </div>
+
+    <!-- Hint -->
+    <div class="modal-hint">
+      Press <kbd>?</kbd> or <kbd>Ctrl+/</kbd> to toggle this help
+    </div>
+  </div>
+</div>
