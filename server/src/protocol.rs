@@ -12,7 +12,7 @@ pub enum Command {
         id: String,
         timestamp: i64,
         path: String,
-        #[serde(default)]
+        #[serde(default, alias = "showHidden")]
         show_hidden: bool,
     },
     
@@ -86,6 +86,39 @@ pub enum Command {
         pattern: String,
         #[serde(default)]
         recursive: bool,
+        #[serde(default, alias = "maxResults")]
+        max_results: Option<usize>,
+    },
+
+    #[serde(rename = "SUGGEST_PATHS")]
+    SuggestPaths {
+        id: String,
+        timestamp: i64,
+        input: String,
+        #[serde(alias = "currentPath")]
+        current_path: String,
+        #[serde(default)]
+        limit: Option<usize>,
+    },
+
+    #[serde(rename = "PROTECT_PATH")]
+    ProtectPath {
+        id: String,
+        timestamp: i64,
+        path: String,
+    },
+
+    #[serde(rename = "UNPROTECT_PATH")]
+    UnprotectPath {
+        id: String,
+        timestamp: i64,
+        path: String,
+    },
+
+    #[serde(rename = "LIST_PROTECTED")]
+    ListProtected {
+        id: String,
+        timestamp: i64,
     },
 }
 
@@ -101,6 +134,10 @@ impl Command {
             Command::CopyFile { id, .. } => id,
             Command::GetFileInfo { id, .. } => id,
             Command::SearchFiles { id, .. } => id,
+            Command::SuggestPaths { id, .. } => id,
+            Command::ProtectPath { id, .. } => id,
+            Command::UnprotectPath { id, .. } => id,
+            Command::ListProtected { id, .. } => id,
         }
     }
 }
@@ -143,6 +180,8 @@ pub enum ResponseData {
     FileInfo(FileInfo),
     OperationResult(OperationResult),
     SearchResult(SearchResult),
+    PathSuggestions(PathSuggestions),
+    ProtectedPaths(ProtectedPaths),
 }
 
 // ============================================================================
@@ -200,6 +239,17 @@ pub struct SearchResult {
     pub path: String,
     pub matches: Vec<FileInfo>,
     pub total_matches: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathSuggestions {
+    pub input: String,
+    pub suggestions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtectedPaths {
+    pub items: Vec<String>,
 }
 
 // ============================================================================

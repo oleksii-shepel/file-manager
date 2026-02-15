@@ -13,10 +13,16 @@ import {
   CopyFileCommand,
   GetFileInfoCommand,
   SearchFilesCommand,
+  SuggestPathsCommand,
+  ProtectPathCommand,
+  UnprotectPathCommand,
+  ListProtectedCommand,
   DirectoryListing,
   FileContent,
   FileInfo,
   OperationResult,
+  PathSuggestions,
+  ProtectedPaths,
   SearchResult,
   WebSocketMessage,
   MessageType,
@@ -296,7 +302,8 @@ export class ApiService {
   async searchFiles(
     path: string,
     pattern: string,
-    recursive: boolean = true
+    recursive: boolean = true,
+    maxResults?: number
   ): Promise<SearchResult> {
     const command: SearchFilesCommand = {
       type: CommandType.SEARCH_FILES,
@@ -305,6 +312,7 @@ export class ApiService {
       path,
       pattern,
       recursive,
+      maxResults,
     };
 
     const response = await this.sendHttpCommand(command);
@@ -314,6 +322,68 @@ export class ApiService {
     }
 
     return response.data as SearchResult;
+  }
+
+  async smartGlobalSearch(query: string, maxResults: number = 200): Promise<SearchResult> {
+    return this.searchFiles('__global__', query, true, maxResults);
+  }
+
+  async suggestPaths(input: string, currentPath: string, limit: number = 20): Promise<PathSuggestions> {
+    const command: SuggestPathsCommand = {
+      type: CommandType.SUGGEST_PATHS,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      input,
+      currentPath,
+      limit,
+    };
+
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as PathSuggestions;
+  }
+
+  async protectPath(path: string): Promise<OperationResult> {
+    const command: ProtectPathCommand = {
+      type: CommandType.PROTECT_PATH,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      path,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as OperationResult;
+  }
+
+  async unprotectPath(path: string): Promise<OperationResult> {
+    const command: UnprotectPathCommand = {
+      type: CommandType.UNPROTECT_PATH,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      path,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as OperationResult;
+  }
+
+  async listProtectedPaths(): Promise<ProtectedPaths> {
+    const command: ListProtectedCommand = {
+      type: CommandType.LIST_PROTECTED,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as ProtectedPaths;
   }
 
   /**

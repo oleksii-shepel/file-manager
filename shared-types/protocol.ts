@@ -17,6 +17,10 @@ export enum CommandType {
   COPY_FILE = 'COPY_FILE',
   GET_FILE_INFO = 'GET_FILE_INFO',
   SEARCH_FILES = 'SEARCH_FILES',
+  SUGGEST_PATHS = 'SUGGEST_PATHS',
+  PROTECT_PATH = 'PROTECT_PATH',
+  UNPROTECT_PATH = 'UNPROTECT_PATH',
+  LIST_PROTECTED = 'LIST_PROTECTED',
 }
 
 export interface BaseCommand {
@@ -79,6 +83,28 @@ export interface SearchFilesCommand extends BaseCommand {
   path: string;
   pattern: string;
   recursive?: boolean;
+  maxResults?: number;
+}
+
+export interface SuggestPathsCommand extends BaseCommand {
+  type: CommandType.SUGGEST_PATHS;
+  input: string;
+  currentPath: string;
+  limit?: number;
+}
+
+export interface ProtectPathCommand extends BaseCommand {
+  type: CommandType.PROTECT_PATH;
+  path: string;
+}
+
+export interface UnprotectPathCommand extends BaseCommand {
+  type: CommandType.UNPROTECT_PATH;
+  path: string;
+}
+
+export interface ListProtectedCommand extends BaseCommand {
+  type: CommandType.LIST_PROTECTED;
 }
 
 export type Command =
@@ -90,7 +116,11 @@ export type Command =
   | MoveFileCommand
   | CopyFileCommand
   | GetFileInfoCommand
-  | SearchFilesCommand;
+  | SearchFilesCommand
+  | SuggestPathsCommand
+  | ProtectPathCommand
+  | UnprotectPathCommand
+  | ListProtectedCommand;
 
 // ============================================================================
 // Responses (Server -> Client)
@@ -168,6 +198,15 @@ export interface SearchResult {
   path: string;
   matches: FileInfo[];
   totalMatches: number;
+}
+
+export interface PathSuggestions {
+  input: string;
+  suggestions: string[];
+}
+
+export interface ProtectedPaths {
+  items: string[];
 }
 
 // ============================================================================

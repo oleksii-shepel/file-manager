@@ -2,56 +2,143 @@
   <div class="toolbar">
     <h1>File Manager</h1>
     <div class="toolbar-actions">
+      <label class="workspace-label">Workspace</label>
+      <select
+        class="workspace-select"
+        [ngModel]="currentWorkspaceId"
+        (ngModelChange)="selectWorkspace($event)"
+      >
+        <option *ngFor="let ws of workspaces" [value]="ws.id">{{ ws.name }}</option>
+      </select>
+      <button (click)="createWorkspace()">New Workspace</button>
+      <button (click)="deleteCurrentWorkspace()" [disabled]="workspaces.length <= 1">Delete Workspace</button>
       <button (click)="toggleShowHidden()" [class.active]="showHidden">
-        {{ showHidden ? 'Hide' : 'Show' }} Hidden Files
+        {{ showHidden ? 'Hide' : 'Show' }} Hidden
       </button>
-      <input 
-        type="text" 
-        [(ngModel)]="searchQuery" 
-        placeholder="Search files..." 
+      <button (click)="setGlobalSearchMode(!globalSearchMode)" [class.active]="globalSearchMode">
+        {{ globalSearchMode ? 'Global Search ON' : 'Global Search OFF' }}
+      </button>
+      <input
+        type="text"
+        [(ngModel)]="searchQuery"
+        (keydown.enter)="onSearchEnter()"
+        placeholder="Filter: text, *.ts, type:directory, ext:pdf, size>10mb"
         class="search-input"
       />
+      <button *ngIf="globalSearchMode" (click)="runGlobalSearch()" [disabled]="globalSearchLoading">
+        {{ globalSearchLoading ? 'Searching...' : 'Run Search' }}
+      </button>
+      <button (click)="openQuickView()">Quick View (Space)</button>
+      <button (click)="setPanelMode('dashboard')" [class.active]="panelMode === 'dashboard'">Dashboard</button>
+      <button (click)="setPanelMode('notes')" [class.active]="panelMode === 'notes'">Notes</button>
+    </div>
+  </div>
+
+  <div class="hint-row">
+    Shortcuts: Ctrl+T new tab, Ctrl+W close tab, Ctrl+Tab next tab, Ctrl+1..9 tab by index, Ctrl+Shift+N new workspace
+  </div>
+
+  <div class="global-search-panel" *ngIf="globalSearchMode">
+    <div class="global-search-header">Global Search Results ({{ globalSearchResults.length }})</div>
+    <div class="global-search-error" *ngIf="globalSearchError">{{ globalSearchError }}</div>
+    <div class="global-search-list" *ngIf="!globalSearchError">
+      <button
+        class="global-search-item"
+        *ngFor="let item of globalSearchResults"
+        (dblclick)="openGlobalResult(item)"
+      >
+        <span class="kind">{{ item.type }}</span>
+        <span class="name">{{ item.name }}</span>
+        <span class="path">{{ item.path }}</span>
+      </button>
+      <div class="empty" *ngIf="!globalSearchLoading && globalSearchResults.length === 0">
+        No global results yet. Type query and press Enter.
+      </div>
     </div>
   </div>
 
   <div class="panes-container">
-    <!-- Left Pane -->
-    <div class="pane">
+    <div class="pane" [class.active]="activePaneSide === 'left'" (click)="setActivePane('left')">
+      <div class="tab-strip">
+        <button class="tab add" (click)="createTab('left')">+ Tab</button>
+        <button
+          *ngFor="let tab of activeWorkspace.leftTabs"
+          class="tab"
+          [class.active]="tab.id === activeWorkspace.activeLeftTabId"
+          (click)="selectTab('left', tab.id)"
+        >
+          <span class="tab-title">{{ tab.title }}</span>
+          <span
+            class="tab-close"
+            title="Close tab"
+            (click)="$event.stopPropagation(); closeTab('left', tab.id)"
+          >x</span>
+        </button>
+      </div>
+
       <div class="pane-header">
-        <button (click)="navigateToParent(leftPane)" class="nav-button">⬆️ Up</button>
-        <div class="path">{{ leftPane.currentPath || '/' }}</div>
-        <button (click)="refresh(leftPane)" class="refresh-button">🔄</button>
+        <button (click)="navigateToParent(leftPane)" class="nav-button">Up</button>
+        <div class="path-input-wrap">
+          <input
+            class="path-input"
+            [(ngModel)]="leftPane.pathInput"
+            (input)="onPathInput('left', leftPane)"
+            (keydown)="onPathKeydown($event, 'left', leftPane)"
+            (keydown.enter)="onPathEnter(leftPane)"
+            placeholder="Type path and press Enter"
+          />
+          <div class="path-suggestions" *ngIf="leftPathSuggestions.length > 0">
+            <button
+              class="path-suggestion"
+              *ngFor="let suggestion of leftPathSuggestions; let i = index"
+              [class.active]="i === leftSuggestionIndex"
+              (click)="applySuggestion('left', leftPane, suggestion)"
+            >
+              {{ suggestion }}
+            </button>
+          </div>
+        </div>
+        <button (click)="refresh(leftPane)" class="refresh-button">Refresh</button>
       </div>
 
       <div class="pane-actions">
-        <button (click)="createNewFolder(leftPane)">➕ New Folder</button>
+        <button (click)="createNewFolder(leftPane)">New Folder</button>
+        <button (click)="protectSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          Protect
+        </button>
+        <button (click)="unprotectSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          Unprotect
+        </button>
         <button (click)="deleteSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
-          🗑️ Delete ({{ leftPane.selectedFiles.size }})
+          Delete ({{ leftPane.selectedFiles.size }})
         </button>
         <button (click)="copyToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
-          ➡️ Copy →
+          Copy ->
         </button>
         <button (click)="moveToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
-          ➡️ Move →
+          Move ->
         </button>
       </div>
 
       <div class="pane-content">
         <div *ngIf="leftPane.loading" class="loading">Loading...</div>
         <div *ngIf="leftPane.error" class="error">{{ leftPane.error }}</div>
-        
+
         <div *ngIf="!leftPane.loading && !leftPane.error" class="file-list">
-          <div 
-            *ngFor="let entry of leftPane.entries"
+          <div
+            *ngFor="let entry of getVisibleEntries(leftPane)"
             class="file-entry"
             [class.selected]="isSelected(leftPane, entry)"
             [class.directory]="entry.type === FileType.DIRECTORY"
+            [class.protected]="isProtectedEntry(entry)"
             (click)="toggleSelection(leftPane, entry)"
             (dblclick)="navigateToPath(leftPane, entry)"
           >
             <span class="file-icon">{{ getFileIcon(entry) }}</span>
             <div class="file-info">
-              <div class="file-name">{{ entry.name }}</div>
+              <div class="file-name">
+                {{ entry.name }} <span *ngIf="isProtectedEntry(entry)">[PROTECTED]</span>
+              </div>
               <div class="file-details">
                 <span class="file-size">{{ formatSize(entry.size) }}</span>
                 <span class="file-date">{{ formatDate(entry.modified) }}</span>
@@ -62,43 +149,87 @@
       </div>
     </div>
 
-    <!-- Right Pane -->
-    <div class="pane">
+    <div class="pane" [class.active]="activePaneSide === 'right'" (click)="setActivePane('right')">
+      <div class="tab-strip">
+        <button class="tab add" (click)="createTab('right')">+ Tab</button>
+        <button
+          *ngFor="let tab of activeWorkspace.rightTabs"
+          class="tab"
+          [class.active]="tab.id === activeWorkspace.activeRightTabId"
+          (click)="selectTab('right', tab.id)"
+        >
+          <span class="tab-title">{{ tab.title }}</span>
+          <span
+            class="tab-close"
+            title="Close tab"
+            (click)="$event.stopPropagation(); closeTab('right', tab.id)"
+          >x</span>
+        </button>
+      </div>
+
       <div class="pane-header">
-        <button (click)="navigateToParent(rightPane)" class="nav-button">⬆️ Up</button>
-        <div class="path">{{ rightPane.currentPath || '/' }}</div>
-        <button (click)="refresh(rightPane)" class="refresh-button">🔄</button>
+        <button (click)="navigateToParent(rightPane)" class="nav-button">Up</button>
+        <div class="path-input-wrap">
+          <input
+            class="path-input"
+            [(ngModel)]="rightPane.pathInput"
+            (input)="onPathInput('right', rightPane)"
+            (keydown)="onPathKeydown($event, 'right', rightPane)"
+            (keydown.enter)="onPathEnter(rightPane)"
+            placeholder="Type path and press Enter"
+          />
+          <div class="path-suggestions" *ngIf="rightPathSuggestions.length > 0">
+            <button
+              class="path-suggestion"
+              *ngFor="let suggestion of rightPathSuggestions; let i = index"
+              [class.active]="i === rightSuggestionIndex"
+              (click)="applySuggestion('right', rightPane, suggestion)"
+            >
+              {{ suggestion }}
+            </button>
+          </div>
+        </div>
+        <button (click)="refresh(rightPane)" class="refresh-button">Refresh</button>
       </div>
 
       <div class="pane-actions">
+        <button (click)="protectSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          Protect
+        </button>
+        <button (click)="unprotectSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          Unprotect
+        </button>
         <button (click)="copyToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
-          ⬅️ Copy ←
+          <- Copy
         </button>
         <button (click)="moveToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
-          ⬅️ Move ←
+          <- Move
         </button>
         <button (click)="deleteSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
-          🗑️ Delete ({{ rightPane.selectedFiles.size }})
+          Delete ({{ rightPane.selectedFiles.size }})
         </button>
-        <button (click)="createNewFolder(rightPane)">➕ New Folder</button>
+        <button (click)="createNewFolder(rightPane)">New Folder</button>
       </div>
 
       <div class="pane-content">
         <div *ngIf="rightPane.loading" class="loading">Loading...</div>
         <div *ngIf="rightPane.error" class="error">{{ rightPane.error }}</div>
-        
+
         <div *ngIf="!rightPane.loading && !rightPane.error" class="file-list">
-          <div 
-            *ngFor="let entry of rightPane.entries"
+          <div
+            *ngFor="let entry of getVisibleEntries(rightPane)"
             class="file-entry"
             [class.selected]="isSelected(rightPane, entry)"
             [class.directory]="entry.type === FileType.DIRECTORY"
+            [class.protected]="isProtectedEntry(entry)"
             (click)="toggleSelection(rightPane, entry)"
             (dblclick)="navigateToPath(rightPane, entry)"
           >
             <span class="file-icon">{{ getFileIcon(entry) }}</span>
             <div class="file-info">
-              <div class="file-name">{{ entry.name }}</div>
+              <div class="file-name">
+                {{ entry.name }} <span *ngIf="isProtectedEntry(entry)">[PROTECTED]</span>
+              </div>
               <div class="file-details">
                 <span class="file-size">{{ formatSize(entry.size) }}</span>
                 <span class="file-date">{{ formatDate(entry.modified) }}</span>
@@ -107,6 +238,122 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="info-panel">
+    <div class="info-title">Info Panel</div>
+    <ng-container *ngIf="getActiveSelectedEntry() as item; else noSelection">
+      <div class="info-grid">
+        <div><strong>Name:</strong> {{ item.name }}</div>
+        <div><strong>Type:</strong> {{ item.type }}</div>
+        <div><strong>Path:</strong> {{ item.path }}</div>
+        <div><strong>Size:</strong> {{ formatSize(item.size) }}</div>
+        <div><strong>Modified:</strong> {{ formatDate(item.modified) }}</div>
+        <div><strong>Protected:</strong> {{ isProtectedEntry(item) ? 'Yes' : 'No' }}</div>
+      </div>
+    </ng-container>
+    <ng-template #noSelection>
+      <div class="info-empty">Select an item to see metadata and use Quick View.</div>
+    </ng-template>
+  </div>
+
+  <div class="meta-panel" *ngIf="panelMode === 'dashboard'">
+    <div class="meta-col">
+      <div class="meta-title">Dashboard</div>
+      <div class="meta-stat">Pinned notes: {{ pinnedNotes.length }}</div>
+      <div class="meta-stat">Protected notes: {{ protectedNotes.length }}</div>
+      <div class="meta-stat">Protected paths: {{ protectedPaths.size }}</div>
+      <div class="meta-stat">Recent paths: {{ activeWorkspace.pathHistory.length }}</div>
+
+      <div class="meta-title">Workspace Actions</div>
+      <input class="note-input" [(ngModel)]="actionDraftName" placeholder="Action name" />
+      <select class="note-input" [(ngModel)]="actionDraftType">
+        <option value="open_url">Open URL</option>
+        <option value="navigate_path">Navigate Path</option>
+        <option value="run_global_search">Run Global Search</option>
+      </select>
+      <input
+        class="note-input"
+        [(ngModel)]="actionDraftTarget"
+        [placeholder]="actionDraftType === 'open_url' ? 'https://example.com' : actionDraftType === 'navigate_path' ? 'C:/path' : 'search query'"
+      />
+      <button (click)="createWorkspaceAction()">Create Action</button>
+
+      <div class="meta-list">
+        <div class="meta-item action-row" *ngFor="let action of activeWorkspace.actions">
+          <span class="k">{{ action.name }}</span>
+          <span class="d">{{ action.type }}: {{ action.target }}</span>
+          <span class="t">
+            <button (click)="runWorkspaceAction(action)">Run</button>
+            <button (click)="deleteWorkspaceAction(action)">Delete</button>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div class="meta-col">
+      <div class="meta-title">Recent Timeline</div>
+      <div class="meta-list">
+        <div class="meta-item" *ngFor="let item of activityLog | slice:0:12">
+          <span class="k">{{ item.action }}</span>
+          <span class="d">{{ item.details }}</span>
+          <span class="t">{{ item.timestamp | date:'short' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta-panel notes-panel" *ngIf="panelMode === 'notes'">
+    <div class="meta-col notes-list-col">
+      <div class="meta-title">Create Note</div>
+      <input class="note-input" [(ngModel)]="noteDraftTitle" placeholder="Title" />
+      <textarea class="note-textarea" [(ngModel)]="noteDraftBody" placeholder="Body"></textarea>
+      <input class="note-input" [(ngModel)]="noteDraftTags" placeholder="tags, comma,separated" />
+      <button (click)="createNote()">Create</button>
+
+      <div class="meta-title">All Notes</div>
+      <div class="meta-list">
+        <div
+          class="meta-item note-row"
+          *ngFor="let note of notes"
+          [class.selected]="note.id === selectedNoteId"
+          (click)="selectNote(note.id)"
+        >
+          <span class="k">{{ note.title }}</span>
+          <span class="d">{{ note.tags.join(', ') }}</span>
+          <span class="t">{{ note.updatedAt | date:'short' }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="meta-col" *ngIf="selectedNote as note">
+      <div class="meta-title">Selected Note</div>
+      <input class="note-input" #editTitle [value]="note.title" [disabled]="note.protected" />
+      <textarea class="note-textarea" #editBody [value]="note.body" [disabled]="note.protected"></textarea>
+      <input class="note-input" #editTags [value]="note.tags.join(', ')" [disabled]="note.protected" />
+      <div class="note-actions">
+        <button (click)="updateSelectedNote(editTitle.value, editBody.value, editTags.value)" [disabled]="note.protected">Save</button>
+        <button (click)="togglePin(note)">{{ note.pinned ? 'Unpin' : 'Pin' }}</button>
+        <button (click)="toggleProtectNote(note)">{{ note.protected ? 'Unprotect' : 'Protect' }}</button>
+        <button (click)="deleteNote(note)" [disabled]="note.protected">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="quick-view-overlay" *ngIf="quickViewOpen" (click)="closeQuickView()">
+  <div class="quick-view-modal" (click)="$event.stopPropagation()">
+    <div class="quick-view-header">
+      <div class="quick-view-title">{{ quickViewTitle || 'Quick View' }}</div>
+      <button (click)="closeQuickView()">Close</button>
+    </div>
+    <div class="quick-view-body">
+      <div *ngIf="quickViewLoading">Loading preview...</div>
+      <div *ngIf="quickViewError" class="quick-view-error">{{ quickViewError }}</div>
+      <pre *ngIf="!quickViewLoading && !quickViewError && quickViewKind === 'text'">{{ quickViewText }}</pre>
+      <img *ngIf="!quickViewLoading && !quickViewError && quickViewKind === 'image' && quickViewDataUrl" [src]="quickViewDataUrl" alt="preview" />
+      <audio *ngIf="!quickViewLoading && !quickViewError && quickViewKind === 'audio' && quickViewDataUrl" [src]="quickViewDataUrl" controls></audio>
+      <video *ngIf="!quickViewLoading && !quickViewError && quickViewKind === 'video' && quickViewDataUrl" [src]="quickViewDataUrl" controls></video>
+      <iframe *ngIf="!quickViewLoading && !quickViewError && quickViewKind === 'pdf' && quickViewDataUrl" [src]="quickViewDataUrl"></iframe>
     </div>
   </div>
 </div>
