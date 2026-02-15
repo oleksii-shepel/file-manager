@@ -21,6 +21,11 @@ export enum CommandType {
   PROTECT_PATH = 'PROTECT_PATH',
   UNPROTECT_PATH = 'UNPROTECT_PATH',
   LIST_PROTECTED = 'LIST_PROTECTED',
+  START_SHARE = 'START_SHARE',
+  STOP_SHARE = 'STOP_SHARE',
+  LIST_SHARES = 'LIST_SHARES',
+  CREATE_ARCHIVE = 'CREATE_ARCHIVE',
+  EXTRACT_ARCHIVE = 'EXTRACT_ARCHIVE',
 }
 
 export interface BaseCommand {
@@ -107,6 +112,33 @@ export interface ListProtectedCommand extends BaseCommand {
   type: CommandType.LIST_PROTECTED;
 }
 
+export interface StartShareCommand extends BaseCommand {
+  type: CommandType.START_SHARE;
+  path: string;
+  expiresMinutes?: number;
+}
+
+export interface StopShareCommand extends BaseCommand {
+  type: CommandType.STOP_SHARE;
+  shareId: string;
+}
+
+export interface ListSharesCommand extends BaseCommand {
+  type: CommandType.LIST_SHARES;
+}
+
+export interface CreateArchiveCommand extends BaseCommand {
+  type: CommandType.CREATE_ARCHIVE;
+  sources: string[];
+  archivePath: string;
+}
+
+export interface ExtractArchiveCommand extends BaseCommand {
+  type: CommandType.EXTRACT_ARCHIVE;
+  archivePath: string;
+  destinationPath: string;
+}
+
 export type Command =
   | ListDirectoryCommand
   | ReadFileCommand
@@ -120,7 +152,12 @@ export type Command =
   | SuggestPathsCommand
   | ProtectPathCommand
   | UnprotectPathCommand
-  | ListProtectedCommand;
+  | ListProtectedCommand
+  | StartShareCommand
+  | StopShareCommand
+  | ListSharesCommand
+  | CreateArchiveCommand
+  | ExtractArchiveCommand;
 
 // ============================================================================
 // Responses (Server -> Client)
@@ -207,6 +244,19 @@ export interface PathSuggestions {
 
 export interface ProtectedPaths {
   items: string[];
+}
+
+export interface ShareInfo {
+  id: string;
+  path: string;
+  isDirectory: boolean;
+  createdAt: number;
+  expiresAt?: number;
+  url: string;
+}
+
+export interface ShareList {
+  items: ShareInfo[];
 }
 
 // ============================================================================

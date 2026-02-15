@@ -120,6 +120,48 @@ pub enum Command {
         id: String,
         timestamp: i64,
     },
+
+    #[serde(rename = "START_SHARE")]
+    StartShare {
+        id: String,
+        timestamp: i64,
+        path: String,
+        #[serde(default, alias = "expiresMinutes")]
+        expires_minutes: Option<i64>,
+    },
+
+    #[serde(rename = "STOP_SHARE")]
+    StopShare {
+        id: String,
+        timestamp: i64,
+        #[serde(alias = "shareId")]
+        share_id: String,
+    },
+
+    #[serde(rename = "LIST_SHARES")]
+    ListShares {
+        id: String,
+        timestamp: i64,
+    },
+
+    #[serde(rename = "CREATE_ARCHIVE")]
+    CreateArchive {
+        id: String,
+        timestamp: i64,
+        sources: Vec<String>,
+        #[serde(alias = "archivePath")]
+        archive_path: String,
+    },
+
+    #[serde(rename = "EXTRACT_ARCHIVE")]
+    ExtractArchive {
+        id: String,
+        timestamp: i64,
+        #[serde(alias = "archivePath")]
+        archive_path: String,
+        #[serde(alias = "destinationPath")]
+        destination_path: String,
+    },
 }
 
 impl Command {
@@ -138,6 +180,11 @@ impl Command {
             Command::ProtectPath { id, .. } => id,
             Command::UnprotectPath { id, .. } => id,
             Command::ListProtected { id, .. } => id,
+            Command::StartShare { id, .. } => id,
+            Command::StopShare { id, .. } => id,
+            Command::ListShares { id, .. } => id,
+            Command::CreateArchive { id, .. } => id,
+            Command::ExtractArchive { id, .. } => id,
         }
     }
 }
@@ -182,6 +229,8 @@ pub enum ResponseData {
     SearchResult(SearchResult),
     PathSuggestions(PathSuggestions),
     ProtectedPaths(ProtectedPaths),
+    ShareList(ShareList),
+    ShareInfo(ShareInfo),
 }
 
 // ============================================================================
@@ -250,6 +299,22 @@ pub struct PathSuggestions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtectedPaths {
     pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShareInfo {
+    pub id: String,
+    pub path: String,
+    pub is_directory: bool,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShareList {
+    pub items: Vec<ShareInfo>,
 }
 
 // ============================================================================

@@ -27,6 +27,8 @@ async fn main() {
         .route("/health", get(health_handler))
         .route("/ws", get(ws::websocket_handler))
         .route("/api/command", post(handlers::handle_command))
+        .route("/share/:id", get(handlers::handle_share_root))
+        .route("/share/:id/*tail", get(handlers::handle_share_file))
         .layer(CorsLayer::permissive()); // Configure CORS as needed
 
     // Bind to localhost:3030

@@ -2,11 +2,13 @@ use crate::protocol::*;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcCommand;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[cfg(unix)]
@@ -35,6 +37,21 @@ struct SearchIndexCache {
 
 static GLOBAL_SEARCH_INDEX: OnceLock<Mutex<SearchIndexCache>> = OnceLock::new();
 static PROTECTED_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static SHARE_SESSIONS: OnceLock<Mutex<HashMap<String, ShareSession>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct ShareSession {
+    id: String,
+    path: String,
+    is_directory: bool,
+    created_at: i64,
+    expires_at: Option<i64>,
+}
+
+pub enum ResolvedShareTarget {
+    DirectoryRoot(PathBuf),
+    File(PathBuf),
+}
 
 impl CommandExecutor {
     pub fn execute(command: Command) -> Response {
@@ -80,6 +97,21 @@ impl CommandExecutor {
             }
             Command::ListProtected { .. } => {
                 Self::list_protected()
+            }
+            Command::StartShare { path, expires_minutes, .. } => {
+                Self::start_share(&path, expires_minutes)
+            }
+            Command::StopShare { share_id, .. } => {
+                Self::stop_share(&share_id)
+            }
+            Command::ListShares { .. } => {
+                Self::list_shares()
+            }
+            Command::CreateArchive { sources, archive_path, .. } => {
+                Self::create_archive(&sources, &archive_path)
+            }
+            Command::ExtractArchive { archive_path, destination_path, .. } => {
+                Self::extract_archive(&archive_path, &destination_path)
             }
         };
 
@@ -604,6 +636,229 @@ impl CommandExecutor {
         Ok(ResponseData::ProtectedPaths(ProtectedPaths { items }))
     }
 
+    fn start_share(path: &str, expires_minutes: Option<i64>) -> Result<ResponseData> {
+        let normalized = Self::normalize_path(path);
+        let path_buf = PathBuf::from(&normalized);
+        if !path_buf.exists() {
+            anyhow::bail!("Path does not exist: {}", normalized);
+        }
+
+        let now = Utc::now().timestamp();
+        let expires_at = expires_minutes
+            .filter(|m| *m > 0)
+            .map(|m| now + (m * 60));
+        let session_id = Uuid::new_v4().to_string();
+        let is_directory = path_buf.is_dir();
+        let url = format!("http://127.0.0.1:3030/share/{}", session_id);
+
+        let session = ShareSession {
+            id: session_id.clone(),
+            path: normalized.clone(),
+            is_directory,
+            created_at: now,
+            expires_at,
+        };
+
+        let store = SHARE_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut guard = store
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Share session lock is poisoned"))?;
+        Self::cleanup_expired_shares(&mut guard, now);
+        guard.insert(session_id.clone(), session.clone());
+
+        Ok(ResponseData::ShareInfo(ShareInfo {
+            id: session.id,
+            path: session.path,
+            is_directory: session.is_directory,
+            created_at: session.created_at,
+            expires_at: session.expires_at,
+            url,
+        }))
+    }
+
+    fn stop_share(share_id: &str) -> Result<ResponseData> {
+        let store = SHARE_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut guard = store
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Share session lock is poisoned"))?;
+        guard.remove(share_id);
+
+        Ok(ResponseData::OperationResult(OperationResult {
+            success: true,
+            message: Some(format!("Share stopped: {}", share_id)),
+            affected_paths: None,
+        }))
+    }
+
+    fn list_shares() -> Result<ResponseData> {
+        let store = SHARE_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut guard = store
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Share session lock is poisoned"))?;
+        let now = Utc::now().timestamp();
+        Self::cleanup_expired_shares(&mut guard, now);
+
+        let mut items: Vec<ShareInfo> = guard
+            .values()
+            .cloned()
+            .map(|s| ShareInfo {
+                id: s.id.clone(),
+                path: s.path.clone(),
+                is_directory: s.is_directory,
+                created_at: s.created_at,
+                expires_at: s.expires_at,
+                url: format!("http://127.0.0.1:3030/share/{}", s.id),
+            })
+            .collect();
+        items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(ResponseData::ShareList(ShareList { items }))
+    }
+
+    fn create_archive(sources: &[String], archive_path: &str) -> Result<ResponseData> {
+        if sources.is_empty() {
+            anyhow::bail!("No sources provided for archive creation");
+        }
+
+        Self::ensure_path_not_protected(archive_path, "archive create")?;
+        for src in sources {
+            if !Path::new(src).exists() {
+                anyhow::bail!("Source does not exist: {}", src);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            let src_list = sources
+                .iter()
+                .map(|s| format!("'{}'", Self::ps_quote(s)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let script = format!(
+                "$src=@({}); Compress-Archive -Path $src -DestinationPath '{}' -Force",
+                src_list,
+                Self::ps_quote(archive_path)
+            );
+            let status = ProcCommand::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .status()
+                .context("Failed to run PowerShell Compress-Archive")?;
+            if !status.success() {
+                anyhow::bail!("Archive creation failed");
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            let mut cmd = ProcCommand::new("tar");
+            cmd.arg("-czf").arg(archive_path);
+            for src in sources {
+                cmd.arg(src);
+            }
+            let status = cmd.status().context("Failed to run tar for archive creation")?;
+            if !status.success() {
+                anyhow::bail!("Archive creation failed");
+            }
+        }
+
+        Ok(ResponseData::OperationResult(OperationResult {
+            success: true,
+            message: Some(format!("Archive created: {}", archive_path)),
+            affected_paths: Some(vec![archive_path.to_string()]),
+        }))
+    }
+
+    fn extract_archive(archive_path: &str, destination_path: &str) -> Result<ResponseData> {
+        Self::ensure_path_not_protected(destination_path, "archive extract")?;
+        if !Path::new(archive_path).exists() {
+            anyhow::bail!("Archive does not exist: {}", archive_path);
+        }
+        fs::create_dir_all(destination_path)?;
+
+        #[cfg(windows)]
+        {
+            let script = format!(
+                "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                Self::ps_quote(archive_path),
+                Self::ps_quote(destination_path)
+            );
+            let status = ProcCommand::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .status()
+                .context("Failed to run PowerShell Expand-Archive")?;
+            if !status.success() {
+                anyhow::bail!("Archive extraction failed");
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            let status = ProcCommand::new("tar")
+                .args(["-xzf", archive_path, "-C", destination_path])
+                .status()
+                .context("Failed to run tar for archive extraction")?;
+            if !status.success() {
+                anyhow::bail!("Archive extraction failed");
+            }
+        }
+
+        Ok(ResponseData::OperationResult(OperationResult {
+            success: true,
+            message: Some(format!("Archive extracted to: {}", destination_path)),
+            affected_paths: Some(vec![destination_path.to_string()]),
+        }))
+    }
+
+    pub fn resolve_share_download(share_id: &str, tail: Option<&str>) -> Result<ResolvedShareTarget> {
+        let store = SHARE_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut guard = store
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Share session lock is poisoned"))?;
+        let now = Utc::now().timestamp();
+        Self::cleanup_expired_shares(&mut guard, now);
+
+        let session = guard
+            .get(share_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Share not found or expired"))?;
+
+        let root = PathBuf::from(session.path);
+        if !root.exists() {
+            anyhow::bail!("Shared path no longer exists");
+        }
+
+        if !session.is_directory {
+            return Ok(ResolvedShareTarget::File(root));
+        }
+
+        let maybe_tail = tail.unwrap_or("").trim_matches('/');
+        if maybe_tail.is_empty() {
+            return Ok(ResolvedShareTarget::DirectoryRoot(root));
+        }
+
+        let candidate = root.join(maybe_tail);
+        let candidate_norm = candidate.canonicalize().unwrap_or(candidate);
+        let root_norm = root.canonicalize().unwrap_or(root);
+        if !candidate_norm.starts_with(&root_norm) {
+            anyhow::bail!("Requested file is outside of shared directory");
+        }
+        if !candidate_norm.exists() {
+            anyhow::bail!("Requested file not found");
+        }
+        if candidate_norm.is_dir() {
+            Ok(ResolvedShareTarget::DirectoryRoot(candidate_norm))
+        } else {
+            Ok(ResolvedShareTarget::File(candidate_norm))
+        }
+    }
+
+    fn cleanup_expired_shares(store: &mut HashMap<String, ShareSession>, now: i64) {
+        store.retain(|_, session| match session.expires_at {
+            Some(exp) => exp > now,
+            None => true,
+        });
+    }
+
     fn ensure_path_not_protected(path: &str, action: &str) -> Result<()> {
         if !Self::is_path_or_ancestor_protected(path)? {
             return Ok(());
@@ -645,6 +900,11 @@ impl CommandExecutor {
             .unwrap_or(raw)
             .to_string_lossy()
             .to_string()
+    }
+
+    #[cfg(windows)]
+    fn ps_quote(value: &str) -> String {
+        value.replace('\'', "''")
     }
 
     fn resolve_search_roots(path: &str) -> Result<Vec<String>> {

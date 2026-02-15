@@ -420,6 +420,22 @@
     justify-content: flex-end;
   }
 
+  .share-create-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+
+    .share-minutes {
+      font-size: 0.75rem;
+      color: #a8a8a8;
+    }
+
+    input[type='number'] {
+      width: 74px;
+    }
+  }
+
   button,
   .note-input,
   .note-textarea {
@@ -450,6 +466,23 @@
     outline: 1px solid #0d5e8f;
     background: #1f3341;
   }
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 71, 113, 0.28);
+  border: 2px dashed #50b6ff;
+  color: #d7f1ff;
+  font-size: 1rem;
+  font-weight: 600;
+  z-index: 140;
+  pointer-events: none;
+  text-align: center;
+  padding: 1rem;
 }
 
 .notes-panel {

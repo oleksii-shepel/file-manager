@@ -2,7 +2,7 @@ import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../services/api.service';
-import { FileInfo, FileType } from '@shared/protocol';
+import { FileInfo, FileType, ShareInfo } from '@shared/protocol';
 
 type PaneSide = 'left' | 'right';
 
@@ -64,6 +64,7 @@ interface NoteItem {
   title: string;
   body: string;
   tags: string[];
+  linkedPath?: string;
   pinned: boolean;
   protected: boolean;
   createdAt: number;
@@ -75,6 +76,17 @@ interface ActivityItem {
   timestamp: number;
   action: string;
   details: string;
+}
+
+type DownloadStatus = 'queued' | 'running' | 'done' | 'error';
+
+interface DownloadTask {
+  id: string;
+  url: string;
+  fileName: string;
+  status: DownloadStatus;
+  progress: number;
+  error?: string;
 }
 
 @Component({
@@ -112,9 +124,16 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   noteDraftTitle = '';
   noteDraftBody = '';
   noteDraftTags = '';
+  noteDraftLinkedPath = '';
   actionDraftName = '';
   actionDraftType: WorkspaceActionType = 'open_url';
   actionDraftTarget = '';
+  activeShares: ShareInfo[] = [];
+  shareExpiresMinutes = 60;
+  downloaderUrlInput = '';
+  downloadTasks: DownloadTask[] = [];
+  isDownloadWorkerRunning = false;
+  dropActive = false;
   leftPathSuggestions: string[] = [];
   rightPathSuggestions: string[] = [];
   leftSuggestionIndex = -1;
@@ -133,6 +152,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     this.loadProtectedPaths();
     this.loadNotes();
     this.loadActivityLog();
+    this.loadShares();
   }
 
   ngOnDestroy(): void {
@@ -254,6 +274,167 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
       }
     } catch (error: any) {
       alert(`Action failed: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  queueDownloadFromInput(): void {
+    const url = this.downloaderUrlInput.trim();
+    if (!url) {
+      return;
+    }
+    this.queueDownload(url);
+    this.downloaderUrlInput = '';
+  }
+
+  queueDownload(url: string): void {
+    const normalized = url.trim();
+    if (!normalized) {
+      return;
+    }
+    const task: DownloadTask = {
+      id: this.nextId('dl'),
+      url: normalized,
+      fileName: this.inferFileNameFromUrl(normalized),
+      status: 'queued',
+      progress: 0,
+    };
+    this.downloadTasks.unshift(task);
+    this.recordActivity('Download', `Queued: ${normalized}`);
+    void this.processDownloadQueue();
+  }
+
+  private async processDownloadQueue(): Promise<void> {
+    if (this.isDownloadWorkerRunning) {
+      return;
+    }
+    this.isDownloadWorkerRunning = true;
+    try {
+      while (true) {
+        const next = this.downloadTasks.find((t) => t.status === 'queued');
+        if (!next) {
+          break;
+        }
+        await this.runDownloadTask(next);
+      }
+    } finally {
+      this.isDownloadWorkerRunning = false;
+    }
+  }
+
+  private async runDownloadTask(task: DownloadTask): Promise<void> {
+    task.status = 'running';
+    task.progress = 5;
+    try {
+      const response = await fetch(task.url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      task.progress = 80;
+      this.triggerBrowserDownload(blob, task.fileName);
+      task.progress = 100;
+      task.status = 'done';
+      this.recordActivity('Download', `Completed: ${task.fileName}`);
+    } catch (error: any) {
+      task.status = 'error';
+      task.error = error?.message || 'Download failed';
+      this.recordActivity('Download', `Failed: ${task.fileName}`);
+    }
+  }
+
+  private triggerBrowserDownload(blob: Blob, fileName: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'download.bin';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  private inferFileNameFromUrl(url: string): string {
+    try {
+      const parsed = new URL(url);
+      const last = parsed.pathname.split('/').filter(Boolean).pop();
+      return last || `download-${Date.now()}.bin`;
+    } catch {
+      return `download-${Date.now()}.bin`;
+    }
+  }
+
+  async shareSelectedFromActivePane(): Promise<void> {
+    const entry = this.getActiveSelectedEntry();
+    if (!entry) {
+      alert('Select a file or directory to share.');
+      return;
+    }
+    try {
+      const info = await this.apiService.startShare(entry.path, this.shareExpiresMinutes);
+      await this.loadShares();
+      this.recordActivity('Share', `Started: ${info.url}`);
+    } catch (error: any) {
+      alert(`Failed to start share: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  async stopShare(shareId: string): Promise<void> {
+    try {
+      await this.apiService.stopShare(shareId);
+      await this.loadShares();
+      this.recordActivity('Share', `Stopped: ${shareId}`);
+    } catch (error: any) {
+      alert(`Failed to stop share: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  openShareUrl(url: string): void {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dropActive = true;
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.dropActive = false;
+  }
+
+  async onDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    this.dropActive = false;
+    const dataTransfer = event.dataTransfer;
+    if (!dataTransfer) {
+      return;
+    }
+
+    const urlText = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain');
+    if (urlText && /^https?:\/\//i.test(urlText.trim())) {
+      this.queueDownload(urlText.trim());
+      return;
+    }
+
+    if (dataTransfer.files && dataTransfer.files.length > 0) {
+      const pane = this.getActiveTab(this.activePaneSide);
+      for (const file of Array.from(dataTransfer.files)) {
+        // MVP: write only text-like files via UTF-8 content.
+        if (!this.isLikelyTextFile(file.name)) {
+          this.recordActivity('Drop', `Skipped non-text file: ${file.name}`);
+          continue;
+        }
+        try {
+          const content = await file.text();
+          const targetPath = this.joinPath(pane.currentPath, file.name);
+          await this.apiService.writeFile(targetPath, content, 'utf8');
+          this.recordActivity('Drop', `Imported: ${file.name}`);
+        } catch (error: any) {
+          this.recordActivity('Drop', `Import failed: ${file.name}`);
+        }
+      }
+      await this.refresh(pane);
     }
   }
 
@@ -556,6 +737,46 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     await this.loadProtectedPaths();
   }
 
+  async archiveSelected(pane: PaneTab): Promise<void> {
+    if (pane.selectedFiles.size === 0) {
+      alert('Select files or folders to archive.');
+      return;
+    }
+    const defaultName = `archive-${Date.now()}.zip`;
+    const defaultPath = this.joinPath(pane.currentPath, defaultName);
+    const archivePath = prompt('Archive output path:', defaultPath);
+    if (!archivePath) {
+      return;
+    }
+    try {
+      await this.apiService.createArchive(Array.from(pane.selectedFiles), archivePath);
+      this.recordActivity('Archive', `Created: ${archivePath}`);
+      await this.refresh(pane);
+    } catch (error: any) {
+      alert(`Archive creation failed: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  async extractSelectedArchive(pane: PaneTab): Promise<void> {
+    if (pane.selectedFiles.size !== 1) {
+      alert('Select exactly one archive file to extract.');
+      return;
+    }
+    const archivePath = Array.from(pane.selectedFiles)[0];
+    const defaultDest = this.joinPath(pane.currentPath, 'extracted');
+    const destinationPath = prompt('Extract destination path:', defaultDest);
+    if (!destinationPath) {
+      return;
+    }
+    try {
+      await this.apiService.extractArchive(archivePath, destinationPath);
+      this.recordActivity('Archive', `Extracted: ${archivePath} -> ${destinationPath}`);
+      await this.refresh(pane);
+    } catch (error: any) {
+      alert(`Archive extraction failed: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
   async protectSelected(pane: PaneTab): Promise<void> {
     if (pane.selectedFiles.size === 0) {
       return;
@@ -756,12 +977,14 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     const title = this.noteDraftTitle.trim() || 'Untitled Note';
     const body = this.noteDraftBody;
     const tags = this.parseTags(this.noteDraftTags);
+    const linkedPath = this.noteDraftLinkedPath.trim() || this.getActiveSelectedEntry()?.path || undefined;
     const now = Date.now();
     const note: NoteItem = {
       id: this.nextId('note'),
       title,
       body,
       tags,
+      linkedPath,
       pinned: false,
       protected: false,
       createdAt: now,
@@ -772,6 +995,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     this.noteDraftTitle = '';
     this.noteDraftBody = '';
     this.noteDraftTags = '';
+    this.noteDraftLinkedPath = '';
     this.saveNotes();
     this.recordActivity('Note', `Created: ${note.title}`);
   }
@@ -780,7 +1004,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     this.selectedNoteId = noteId;
   }
 
-  updateSelectedNote(title: string, body: string, tagsRaw: string): void {
+  updateSelectedNote(title: string, body: string, tagsRaw: string, linkedPathRaw: string): void {
     const note = this.selectedNote;
     if (!note || note.protected) {
       return;
@@ -788,8 +1012,50 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     note.title = title.trim() || 'Untitled Note';
     note.body = body;
     note.tags = this.parseTags(tagsRaw);
+    note.linkedPath = linkedPathRaw.trim() || undefined;
     note.updatedAt = Date.now();
     this.saveNotes();
+  }
+
+  setCreateNoteLinkFromSelection(): void {
+    const selected = this.getActiveSelectedEntry();
+    if (!selected) {
+      return;
+    }
+    this.noteDraftLinkedPath = selected.path;
+  }
+
+  setSelectedNoteLinkFromSelection(note: NoteItem): void {
+    if (note.protected) {
+      return;
+    }
+    const selected = this.getActiveSelectedEntry();
+    if (!selected) {
+      return;
+    }
+    note.linkedPath = selected.path;
+    note.updatedAt = Date.now();
+    this.saveNotes();
+  }
+
+  async openNoteLinkedPath(note: NoteItem): Promise<void> {
+    if (!note.linkedPath) {
+      return;
+    }
+    const pane = this.getActiveTab(this.activePaneSide);
+    try {
+      await this.loadDirectory(pane, note.linkedPath);
+      this.recordActivity('Note', `Opened link: ${note.linkedPath}`);
+      return;
+    } catch {
+      // Ignore and try parent path for file links.
+    }
+
+    const parent = this.getParentPath(note.linkedPath);
+    await this.loadDirectory(pane, parent);
+    pane.selectedFiles.clear();
+    pane.selectedFiles.add(note.linkedPath);
+    this.recordActivity('Note', `Opened link parent: ${note.linkedPath}`);
   }
 
   togglePin(note: NoteItem): void {
@@ -1132,6 +1398,15 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     localStorage.setItem(this.activityStorageKey, JSON.stringify(this.activityLog));
   }
 
+  private async loadShares(): Promise<void> {
+    try {
+      const data = await this.apiService.listShares();
+      this.activeShares = data.items;
+    } catch {
+      this.activeShares = [];
+    }
+  }
+
   private async loadProtectedPaths(): Promise<void> {
     try {
       const data = await this.apiService.listProtectedPaths();
@@ -1390,5 +1665,14 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
       case 'pdf': return 'application/pdf';
       default: return 'application/octet-stream';
     }
+  }
+
+  private isLikelyTextFile(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    const textExt = new Set([
+      'txt', 'md', 'json', 'js', 'ts', 'tsx', 'jsx', 'css', 'scss', 'html', 'xml', 'yml', 'yaml', 'toml',
+      'rs', 'py', 'java', 'cs', 'cpp', 'c', 'h', 'log', 'ini', 'csv'
+    ]);
+    return textExt.has(ext);
   }
 }

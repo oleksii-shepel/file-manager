@@ -58,25 +58,25 @@ Status: in progress
 ## Phase 4 - Sharing and Transfer
 
 - Advanced Wireless File Sharing
-  - Local HTTP share session with signed links
-  - Browser access without native app install
+  - Local HTTP share session with signed links (implemented MVP: tokenized local share sessions)
+  - Browser access without native app install (implemented MVP: `/share/:id` browser route)
   - Optional stream mode and expiration policies
 - Smart Drag and Drop
   - Local copy/move semantics with conflict resolver
-  - URL/file drop intake
+  - URL/file drop intake (implemented MVP: URL drop to downloader queue, text-file drop import)
 - Advanced File Downloader
-  - Job queue, resumable transfers, progress tracking
+  - Job queue, resumable transfers, progress tracking (implemented MVP: queued URL downloads with status/progress)
   - Provider adapters for direct links and stream sources
 
 ## Phase 5 - Productivity Layers
 
 - Notes
   - Structured notes store (implemented MVP: local notes CRUD with tags/pin/protect)
-  - Link notes to files/directories
+  - Link notes to files/directories (implemented MVP: optional linked path, open-link navigation, quick attach from selected item)
 - Dashboard
   - Timeline, recent activity, pinned/protected/tagged views (implemented MVP)
 - Archiver
-  - Read/write common archive formats
+  - Read/write common archive formats (implemented MVP: create/extract flows for selected items)
 - Workspace Actions
   - Run scripts, open URLs, launch external programs (implemented MVP: per-workspace actions for URL, path navigation, global search)
 

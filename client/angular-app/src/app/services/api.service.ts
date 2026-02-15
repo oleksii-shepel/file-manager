@@ -17,12 +17,19 @@ import {
   ProtectPathCommand,
   UnprotectPathCommand,
   ListProtectedCommand,
+  StartShareCommand,
+  StopShareCommand,
+  ListSharesCommand,
+  CreateArchiveCommand,
+  ExtractArchiveCommand,
   DirectoryListing,
   FileContent,
   FileInfo,
   OperationResult,
   PathSuggestions,
   ProtectedPaths,
+  ShareInfo,
+  ShareList,
   SearchResult,
   WebSocketMessage,
   MessageType,
@@ -384,6 +391,78 @@ export class ApiService {
       throw new Error(response.error.message);
     }
     return response.data as ProtectedPaths;
+  }
+
+  async startShare(path: string, expiresMinutes?: number): Promise<ShareInfo> {
+    const command: StartShareCommand = {
+      type: CommandType.START_SHARE,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      path,
+      expiresMinutes,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as ShareInfo;
+  }
+
+  async stopShare(shareId: string): Promise<OperationResult> {
+    const command: StopShareCommand = {
+      type: CommandType.STOP_SHARE,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      shareId,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as OperationResult;
+  }
+
+  async listShares(): Promise<ShareList> {
+    const command: ListSharesCommand = {
+      type: CommandType.LIST_SHARES,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as ShareList;
+  }
+
+  async createArchive(sources: string[], archivePath: string): Promise<OperationResult> {
+    const command: CreateArchiveCommand = {
+      type: CommandType.CREATE_ARCHIVE,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      sources,
+      archivePath,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as OperationResult;
+  }
+
+  async extractArchive(archivePath: string, destinationPath: string): Promise<OperationResult> {
+    const command: ExtractArchiveCommand = {
+      type: CommandType.EXTRACT_ARCHIVE,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+      archivePath,
+      destinationPath,
+    };
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    return response.data as OperationResult;
   }
 
   /**

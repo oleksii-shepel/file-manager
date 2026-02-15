@@ -1,4 +1,4 @@
-<div class="file-manager">
+<div class="file-manager" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
   <div class="toolbar">
     <h1>File Manager</h1>
     <div class="toolbar-actions">
@@ -103,6 +103,12 @@
 
       <div class="pane-actions">
         <button (click)="createNewFolder(leftPane)">New Folder</button>
+        <button (click)="archiveSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          Archive
+        </button>
+        <button (click)="extractSelectedArchive(leftPane)" [disabled]="leftPane.selectedFiles.size !== 1">
+          Extract
+        </button>
         <button (click)="protectSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
           Protect
         </button>
@@ -193,6 +199,12 @@
       </div>
 
       <div class="pane-actions">
+        <button (click)="archiveSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          Archive
+        </button>
+        <button (click)="extractSelectedArchive(rightPane)" [disabled]="rightPane.selectedFiles.size !== 1">
+          Extract
+        </button>
         <button (click)="protectSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
           Protect
         </button>
@@ -290,6 +302,36 @@
           </span>
         </div>
       </div>
+
+      <div class="meta-title">Wireless Sharing</div>
+      <div class="share-create-row">
+        <input class="note-input" type="number" min="1" [(ngModel)]="shareExpiresMinutes" />
+        <span class="share-minutes">minutes expiry</span>
+        <button (click)="shareSelectedFromActivePane()">Share Selected</button>
+      </div>
+      <div class="meta-list">
+        <div class="meta-item action-row" *ngFor="let share of activeShares">
+          <span class="k">{{ share.isDirectory ? 'DIR' : 'FILE' }}</span>
+          <span class="d">{{ share.path }}</span>
+          <span class="t">
+            <button (click)="openShareUrl(share.url)">Open</button>
+            <button (click)="stopShare(share.id)">Stop</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="meta-title">Downloader Queue</div>
+      <div class="share-create-row">
+        <input class="note-input" [(ngModel)]="downloaderUrlInput" placeholder="https://example.com/file.zip" />
+        <button (click)="queueDownloadFromInput()">Queue URL</button>
+      </div>
+      <div class="meta-list">
+        <div class="meta-item action-row" *ngFor="let task of downloadTasks | slice:0:12">
+          <span class="k">{{ task.status.toUpperCase() }}</span>
+          <span class="d">{{ task.fileName }} ({{ task.progress }}%)</span>
+          <span class="t">{{ task.error || '' }}</span>
+        </div>
+      </div>
     </div>
     <div class="meta-col">
       <div class="meta-title">Recent Timeline</div>
@@ -309,6 +351,8 @@
       <input class="note-input" [(ngModel)]="noteDraftTitle" placeholder="Title" />
       <textarea class="note-textarea" [(ngModel)]="noteDraftBody" placeholder="Body"></textarea>
       <input class="note-input" [(ngModel)]="noteDraftTags" placeholder="tags, comma,separated" />
+      <input class="note-input" [(ngModel)]="noteDraftLinkedPath" placeholder="Linked path (optional)" />
+      <button (click)="setCreateNoteLinkFromSelection()">Use Selected Item Path</button>
       <button (click)="createNote()">Create</button>
 
       <div class="meta-title">All Notes</div>
@@ -330,14 +374,21 @@
       <input class="note-input" #editTitle [value]="note.title" [disabled]="note.protected" />
       <textarea class="note-textarea" #editBody [value]="note.body" [disabled]="note.protected"></textarea>
       <input class="note-input" #editTags [value]="note.tags.join(', ')" [disabled]="note.protected" />
+      <input class="note-input" #editLinkedPath [value]="note.linkedPath || ''" [disabled]="note.protected" />
       <div class="note-actions">
-        <button (click)="updateSelectedNote(editTitle.value, editBody.value, editTags.value)" [disabled]="note.protected">Save</button>
+        <button (click)="updateSelectedNote(editTitle.value, editBody.value, editTags.value, editLinkedPath.value)" [disabled]="note.protected">Save</button>
+        <button (click)="setSelectedNoteLinkFromSelection(note)" [disabled]="note.protected">Link Selected Item</button>
+        <button (click)="openNoteLinkedPath(note)" [disabled]="!note.linkedPath">Open Linked Path</button>
         <button (click)="togglePin(note)">{{ note.pinned ? 'Unpin' : 'Pin' }}</button>
         <button (click)="toggleProtectNote(note)">{{ note.protected ? 'Unprotect' : 'Protect' }}</button>
         <button (click)="deleteNote(note)" [disabled]="note.protected">Delete</button>
       </div>
     </div>
   </div>
+</div>
+
+<div class="drop-overlay" *ngIf="dropActive">
+  Drop URL to queue download, or drop text files to import into active pane
 </div>
 
 <div class="quick-view-overlay" *ngIf="quickViewOpen" (click)="closeQuickView()">
