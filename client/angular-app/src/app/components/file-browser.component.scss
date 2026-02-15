@@ -1,4 +1,4 @@
-.file-manager {
+.file-manager-enhanced {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -7,61 +7,203 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
+// ============================================================================
+// Toolbar
+// ============================================================================
+
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   background: #252526;
   border-bottom: 1px solid #3e3e42;
+  gap: 1rem;
 
   h1 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 600;
   }
 
-  .toolbar-actions {
+  .toolbar-left,
+  .toolbar-right {
+    position: relative; // Needed for absolute positioned dropdown
     display: flex;
     gap: 0.5rem;
     align-items: center;
   }
 
-  .search-input {
-    padding: 0.5rem;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    background: #3c3c3c;
-    color: #d4d4d4;
-    font-size: 0.9rem;
-    width: 200px;
+  .toolbar-center {
+    flex: 1;
+    text-align: center;
+  }
+}
 
-    &:focus {
-      outline: none;
-      border-color: #007acc;
+// ============================================================================
+// Workspace Selector
+// ============================================================================
+
+.workspace-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #3c3c3c;
+  border: 1px solid #3e3e42;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none; // Prevent text selection on click
+
+  &:hover {
+    background: #505050;
+  }
+
+  &:active {
+    background: #404040;
+  }
+
+  .workspace-icon {
+    font-size: 1.2rem;
+  }
+
+  .workspace-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+  }
+
+  .workspace-arrow {
+    font-size: 0.7rem;
+    opacity: 0.7;
+  }
+}
+
+.workspace-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  min-width: 250px;
+  z-index: 1000;
+  overflow: hidden;
+
+  .workspace-menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #3e3e42;
+
+    h3 {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      opacity: 0.8;
     }
   }
 
-  button {
-    padding: 0.5rem 1rem;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    background: #3c3c3c;
-    color: #d4d4d4;
+  .workspace-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .workspace-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
     cursor: pointer;
-    font-size: 0.9rem;
-    transition: all 0.2s;
+    transition: background 0.2s;
 
     &:hover {
-      background: #505050;
+      background: #3c3c3c;
     }
 
     &.active {
-      background: #007acc;
-      border-color: #007acc;
+      background: #094771;
+
+      &:hover {
+        background: #0d5e8f;
+      }
+    }
+
+    .workspace-icon {
+      font-size: 1.2rem;
+    }
+
+    .workspace-name {
+      font-weight: 500;
     }
   }
+
+  .workspace-menu-footer {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #3e3e42;
+  }
 }
+
+// ============================================================================
+// Buttons
+// ============================================================================
+
+.btn,
+.btn-small,
+.btn-icon {
+  padding: 0.5rem 1rem;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  background: #3c3c3c;
+  color: #d4d4d4;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: #505050;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &.active {
+    background: #007acc;
+    border-color: #007acc;
+  }
+}
+
+.btn-small {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.btn-icon {
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+}
+
+.btn-danger {
+  background: #f44336;
+  border-color: #f44336;
+
+  &:hover:not(:disabled) {
+    background: #d32f2f;
+  }
+}
+
+// ============================================================================
+// Panes Container
+// ============================================================================
 
 .panes-container {
   display: flex;
@@ -79,71 +221,207 @@
   overflow: hidden;
 }
 
-.pane-header {
+// ============================================================================
+// Tab Bar
+// ============================================================================
+
+.tab-bar {
+  display: flex;
+  background: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  overflow-x: auto;
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #2d2d30;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 2px;
+  }
+}
+
+.tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   background: #2d2d30;
-  border-bottom: 1px solid #3e3e42;
+  border-right: 1px solid #3e3e42;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 120px;
+  max-width: 200px;
+  position: relative;
 
-  .nav-button,
-  .refresh-button {
-    padding: 0.4rem 0.8rem;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
+  &:hover {
     background: #3c3c3c;
-    color: #d4d4d4;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: all 0.2s;
-
-    &:hover {
-      background: #505050;
-    }
   }
 
-  .path {
+  &.active {
+    background: #1e1e1e;
+    border-bottom: 2px solid #007acc;
+  }
+
+  &.pinned {
+    border-left: 3px solid #f9a825;
+  }
+
+  .tab-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .tab-title {
     flex: 1;
-    font-family: 'Courier New', monospace;
     font-size: 0.9rem;
-    padding: 0.4rem 0.8rem;
-    background: #3c3c3c;
-    border-radius: 4px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-}
 
-.pane-actions {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
-  flex-wrap: wrap;
-
-  button {
-    padding: 0.4rem 0.8rem;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    background: #3c3c3c;
+  .tab-pin,
+  .tab-close {
+    display: none;
+    padding: 0.2rem;
+    background: transparent;
+    border: none;
     color: #d4d4d4;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    opacity: 0.7;
     transition: all 0.2s;
 
-    &:hover:not(:disabled) {
+    &:hover {
+      opacity: 1;
       background: #505050;
+      border-radius: 3px;
     }
+  }
 
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+  &:hover .tab-pin,
+  &:hover .tab-close {
+    display: block;
+  }
+
+  &.pinned .tab-pin {
+    display: block;
+  }
+}
+
+.tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem;
+  background: transparent;
+  border: none;
+  color: #d4d4d4;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+  opacity: 0.6;
+
+  &:hover {
+    opacity: 1;
+    background: #3c3c3c;
+  }
+}
+
+// ============================================================================
+// Address Bar
+// ============================================================================
+
+.address-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #252526;
+  border-bottom: 1px solid #3e3e42;
+
+  .address-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+
+    &:focus {
+      outline: none;
+      border-color: #007acc;
     }
   }
 }
+
+// ============================================================================
+// Filter Bar
+// ============================================================================
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #2a2d2e;
+  border-bottom: 1px solid #3e3e42;
+
+  .filter-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-size: 0.9rem;
+
+    &:focus {
+      outline: none;
+      border-color: #007acc;
+    }
+
+    &::placeholder {
+      color: #858585;
+      font-size: 0.85rem;
+    }
+  }
+
+  .filter-count {
+    font-size: 0.85rem;
+    color: #858585;
+    white-space: nowrap;
+  }
+}
+
+// ============================================================================
+// Action Bar
+// ============================================================================
+
+.action-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #252526;
+  border-bottom: 1px solid #3e3e42;
+  flex-wrap: wrap;
+}
+
+// ============================================================================
+// Pane Content
+// ============================================================================
 
 .pane-content {
   flex: 1;
@@ -180,6 +458,10 @@
 .error {
   color: #f48771;
 }
+
+// ============================================================================
+// File List
+// ============================================================================
 
 .file-list {
   display: flex;

@@ -1,15 +1,25 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject, takeUntil } from 'rxjs';
+
 import { ApiService } from '../services/api.service';
+import { WorkspaceService } from '../services/workspace.service';
+import { FilterService } from '../services/filter.service';
 import { FileInfo, FileType } from '@shared/protocol';
+import { WorkspaceConfig, TabInfo, FilterQuery } from '@shared/protocol-enhanced';
 
 interface BrowserPane {
+  id: string;
   currentPath: string;
+  currentTabId: string;
   entries: FileInfo[];
+  filteredEntries: FileInfo[];
   selectedFiles: Set<string>;
   loading: boolean;
   error: string | null;
+  filterText: string;
+  filterQuery: FilterQuery;
 }
 
 @Component({
@@ -20,51 +30,192 @@ interface BrowserPane {
   styleUrls: ['./file-browser.component.scss']
 })
 export class FileBrowserComponent implements OnInit, OnDestroy {
-  leftPane: BrowserPane = this.createEmptyPane();
-  rightPane: BrowserPane = this.createEmptyPane();
+  leftPane: BrowserPane = this.createEmptyPane('left');
+  rightPane: BrowserPane = this.createEmptyPane('right');
+  
+  activeWorkspace: WorkspaceConfig | null = null;
+  workspaceList: WorkspaceConfig[] = [];
+  showWorkspaceMenu = false;
   showHidden = false;
-  searchQuery = '';
-  FileType = FileType; // For template access
+  
+  FileType = FileType;
+  
+  private destroy$ = new Subject<void>();
 
-  constructor(private apiService: ApiService) {}
+  constructor(
+    private apiService: ApiService,
+    private workspaceService: WorkspaceService,
+    private filterService: FilterService
+  ) {}
 
   ngOnInit(): void {
-    // Initialize with user's home directory or root
-    const homePath = this.getHomePath();
-    this.loadDirectory(this.leftPane, homePath);
-    this.loadDirectory(this.rightPane, homePath);
+    // Subscribe to workspace changes
+    this.workspaceService.activeWorkspace$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(workspace => {
+        this.activeWorkspace = workspace;
+        if (workspace) {
+          this.loadWorkspaceState(workspace);
+        }
+      });
+
+    this.workspaceService.workspaces$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(workspaces => {
+        this.workspaceList = workspaces.workspaces;
+      });
 
     // Check server connection
     this.checkServerConnection();
   }
 
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     this.apiService.disconnectWebSocket();
   }
 
-  private createEmptyPane(): BrowserPane {
+  // ============================================================================
+  // Workspace Management
+  // ============================================================================
+
+  loadWorkspaceState(workspace: WorkspaceConfig): void {
+    this.showHidden = workspace.showHidden;
+
+    // Load left pane
+    const leftActiveTab = this.workspaceService.getActiveTab('left');
+    if (leftActiveTab) {
+      this.leftPane.currentPath = leftActiveTab.path;
+      this.leftPane.currentTabId = leftActiveTab.id;
+      this.loadDirectory(this.leftPane, leftActiveTab.path);
+    }
+
+    // Load right pane
+    const rightActiveTab = this.workspaceService.getActiveTab('right');
+    if (rightActiveTab) {
+      this.rightPane.currentPath = rightActiveTab.path;
+      this.rightPane.currentTabId = rightActiveTab.id;
+      this.loadDirectory(this.rightPane, rightActiveTab.path);
+    }
+  }
+
+  createNewWorkspace(): void {
+    const name = prompt('Enter workspace name:');
+    if (!name) return;
+
+    const workspace = this.workspaceService.createWorkspace(name);
+    this.workspaceService.switchWorkspace(workspace.id);
+    this.showWorkspaceMenu = false;
+  }
+
+  switchWorkspace(workspaceId: string): void {
+    this.workspaceService.switchWorkspace(workspaceId);
+    this.showWorkspaceMenu = false;
+  }
+
+  toggleWorkspaceMenu(event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.showWorkspaceMenu = !this.showWorkspaceMenu;
+  }
+
+  closeWorkspaceMenu(): void {
+    this.showWorkspaceMenu = false;
+  }
+
+  deleteCurrentWorkspace(): void {
+    if (!this.activeWorkspace) return;
+    
+    if (!confirm(`Delete workspace "${this.activeWorkspace.name}"?`)) {
+      return;
+    }
+
+    this.workspaceService.deleteWorkspace(this.activeWorkspace.id);
+  }
+
+  renameCurrentWorkspace(): void {
+    if (!this.activeWorkspace) return;
+
+    const name = prompt('Enter new workspace name:', this.activeWorkspace.name);
+    if (!name) return;
+
+    this.workspaceService.updateWorkspace(this.activeWorkspace.id, { name });
+  }
+
+  // ============================================================================
+  // Tab Management
+  // ============================================================================
+
+  getTabs(paneId: string): TabInfo[] {
+    return this.workspaceService.getTabs(paneId);
+  }
+
+  addTab(pane: BrowserPane): void {
+    const newTab = this.workspaceService.addTab(pane.id, pane.currentPath, true);
+    if (newTab) {
+      pane.currentTabId = newTab.id;
+      this.loadDirectory(pane, newTab.path);
+    }
+  }
+
+  closeTab(pane: BrowserPane, tabId: string): void {
+    const tabs = this.getTabs(pane.id);
+    if (tabs.length <= 1) {
+      alert('Cannot close the last tab');
+      return;
+    }
+
+    this.workspaceService.closeTab(pane.id, tabId);
+    
+    // Load the new active tab
+    const activeTab = this.workspaceService.getActiveTab(pane.id);
+    if (activeTab) {
+      pane.currentTabId = activeTab.id;
+      pane.currentPath = activeTab.path;
+      this.loadDirectory(pane, activeTab.path);
+    }
+  }
+
+  switchTab(pane: BrowserPane, tabId: string): void {
+    this.workspaceService.switchTab(pane.id, tabId);
+    
+    const tab = this.getTabs(pane.id).find(t => t.id === tabId);
+    if (tab) {
+      pane.currentTabId = tabId;
+      pane.currentPath = tab.path;
+      this.loadDirectory(pane, tab.path);
+    }
+  }
+
+  toggleTabPin(pane: BrowserPane, tabId: string, event: Event): void {
+    event.stopPropagation();
+    this.workspaceService.toggleTabPin(pane.id, tabId);
+  }
+
+  // ============================================================================
+  // File Operations
+  // ============================================================================
+
+  private createEmptyPane(id: string): BrowserPane {
     return {
+      id,
       currentPath: '',
+      currentTabId: '',
       entries: [],
+      filteredEntries: [],
       selectedFiles: new Set(),
       loading: false,
       error: null,
+      filterText: '',
+      filterQuery: { text: '', criteria: [] },
     };
-  }
-
-  private getHomePath(): string {
-    // Try to get home directory based on platform
-    if (typeof window !== 'undefined') {
-      // For demo purposes, use root
-      return '/';
-    }
-    return '/';
   }
 
   async checkServerConnection(): Promise<void> {
     const isHealthy = await this.apiService.checkHealth();
     if (!isHealthy) {
-      console.error('Server is not responding. Make sure the server is running on localhost:3030');
+      console.error('Server is not responding');
       this.leftPane.error = 'Cannot connect to server';
       this.rightPane.error = 'Cannot connect to server';
     }
@@ -79,6 +230,12 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
       pane.currentPath = listing.path;
       pane.entries = listing.entries;
       pane.selectedFiles.clear();
+      
+      // Apply current filter
+      this.applyFilter(pane);
+
+      // Update tab path (now uses silent mode to prevent reload loop)
+      this.workspaceService.updateTabPath(pane.id, pane.currentTabId, path);
     } catch (error: any) {
       pane.error = error.message || 'Failed to load directory';
       console.error('Failed to load directory:', error);
@@ -100,6 +257,12 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     }
   }
 
+  async navigateFromAddressBar(pane: BrowserPane, path: string): Promise<void> {
+    if (path && path !== pane.currentPath) {
+      await this.loadDirectory(pane, path);
+    }
+  }
+
   private getParentPath(path: string): string {
     if (path === '/' || path === '') {
       return '/';
@@ -113,6 +276,33 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     parts.pop();
     return '/' + parts.join('/');
   }
+
+  // ============================================================================
+  // Filter System
+  // ============================================================================
+
+  onFilterChange(pane: BrowserPane): void {
+    pane.filterQuery = this.filterService.parseFilterText(pane.filterText);
+    this.applyFilter(pane);
+  }
+
+  clearFilter(pane: BrowserPane): void {
+    pane.filterText = '';
+    pane.filterQuery = { text: '', criteria: [] };
+    this.applyFilter(pane);
+  }
+
+  private applyFilter(pane: BrowserPane): void {
+    if (!pane.filterText || pane.filterText.trim() === '') {
+      pane.filteredEntries = pane.entries;
+    } else {
+      pane.filteredEntries = this.filterService.filterEntries(pane.entries, pane.filterQuery);
+    }
+  }
+
+  // ============================================================================
+  // Selection and Actions
+  // ============================================================================
 
   toggleSelection(pane: BrowserPane, entry: FileInfo): void {
     if (pane.selectedFiles.has(entry.path)) {
@@ -131,9 +321,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   }
 
   async deleteSelected(pane: BrowserPane): Promise<void> {
-    if (pane.selectedFiles.size === 0) {
-      return;
-    }
+    if (pane.selectedFiles.size === 0) return;
 
     if (!confirm(`Delete ${pane.selectedFiles.size} item(s)?`)) {
       return;
@@ -153,9 +341,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
   async createNewFolder(pane: BrowserPane): Promise<void> {
     const folderName = prompt('Enter folder name:');
-    if (!folderName) {
-      return;
-    }
+    if (!folderName) return;
 
     const newPath = `${pane.currentPath}/${folderName}`.replace('//', '/');
 
@@ -210,6 +396,10 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     await this.refresh(targetPane);
   }
 
+  // ============================================================================
+  // Display Helpers
+  // ============================================================================
+
   formatSize(bytes: number): string {
     if (bytes === 0) return '0 B';
     
@@ -231,7 +421,6 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
       return '🔗';
     }
     
-    // Simple file type icons based on extension
     const ext = entry.name.split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'txt':
@@ -261,6 +450,14 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
   async toggleShowHidden(): Promise<void> {
     this.showHidden = !this.showHidden;
+    
+    // Update workspace
+    if (this.activeWorkspace) {
+      this.workspaceService.updateWorkspace(this.activeWorkspace.id, {
+        showHidden: this.showHidden
+      });
+    }
+
     await this.refresh(this.leftPane);
     await this.refresh(this.rightPane);
   }

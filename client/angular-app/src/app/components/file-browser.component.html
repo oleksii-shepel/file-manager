@@ -1,48 +1,144 @@
-<div class="file-manager">
+<div class="file-manager-enhanced" (click)="closeWorkspaceMenu()">
+  <!-- Top Toolbar with Workspace Selector -->
   <div class="toolbar">
-    <h1>File Manager</h1>
-    <div class="toolbar-actions">
-      <button (click)="toggleShowHidden()" [class.active]="showHidden">
-        {{ showHidden ? 'Hide' : 'Show' }} Hidden Files
+    <div class="toolbar-left">
+      <div class="workspace-selector" (click)="toggleWorkspaceMenu($event)">
+        <span class="workspace-icon">{{ activeWorkspace?.icon || '📁' }}</span>
+        <span class="workspace-name">{{ activeWorkspace?.name || 'Default' }}</span>
+        <span class="workspace-arrow">▼</span>
+      </div>
+
+      <!-- Workspace Dropdown Menu -->
+      <div class="workspace-menu" *ngIf="showWorkspaceMenu" (click)="$event.stopPropagation()">
+        <div class="workspace-menu-header">
+          <h3>Workspaces</h3>
+          <button (click)="createNewWorkspace(); $event.stopPropagation()" class="btn-icon">➕</button>
+        </div>
+        <div class="workspace-list">
+          <div 
+            *ngFor="let workspace of workspaceList"
+            class="workspace-item"
+            [class.active]="workspace.id === activeWorkspace?.id"
+            (click)="switchWorkspace(workspace.id); $event.stopPropagation()"
+          >
+            <span class="workspace-icon">{{ workspace.icon }}</span>
+            <span class="workspace-name">{{ workspace.name }}</span>
+          </div>
+        </div>
+        <div class="workspace-menu-footer">
+          <button (click)="renameCurrentWorkspace(); $event.stopPropagation()" class="btn-small">Rename</button>
+          <button (click)="deleteCurrentWorkspace(); $event.stopPropagation()" class="btn-small btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar-center">
+      <h1>File Manager</h1>
+    </div>
+
+    <div class="toolbar-right">
+      <button (click)="toggleShowHidden()" [class.active]="showHidden" class="btn">
+        {{ showHidden ? 'Hide' : 'Show' }} Hidden
       </button>
-      <input 
-        type="text" 
-        [(ngModel)]="searchQuery" 
-        placeholder="Search files..." 
-        class="search-input"
-      />
     </div>
   </div>
 
+  <!-- Main Panes Container -->
   <div class="panes-container">
     <!-- Left Pane -->
     <div class="pane">
-      <div class="pane-header">
-        <button (click)="navigateToParent(leftPane)" class="nav-button">⬆️ Up</button>
-        <div class="path">{{ leftPane.currentPath || '/' }}</div>
-        <button (click)="refresh(leftPane)" class="refresh-button">🔄</button>
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <div class="tabs">
+          <div 
+            *ngFor="let tab of getTabs('left')"
+            class="tab"
+            [class.active]="tab.isActive"
+            [class.pinned]="tab.isPinned"
+            (click)="switchTab(leftPane, tab.id)"
+          >
+            <span class="tab-icon">📁</span>
+            <span class="tab-title">{{ tab.title }}</span>
+            <button 
+              *ngIf="tab.isPinned" 
+              class="tab-pin"
+              (click)="toggleTabPin(leftPane, tab.id, $event)"
+              title="Unpin tab"
+            >
+              📌
+            </button>
+            <button 
+              *ngIf="!tab.isPinned" 
+              class="tab-close"
+              (click)="closeTab(leftPane, tab.id); $event.stopPropagation()"
+              title="Close tab"
+            >
+              ✕
+            </button>
+          </div>
+          <button class="tab-new" (click)="addTab(leftPane)" title="New tab">
+            ➕
+          </button>
+        </div>
       </div>
 
-      <div class="pane-actions">
-        <button (click)="createNewFolder(leftPane)">➕ New Folder</button>
-        <button (click)="deleteSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
+      <!-- Address Bar -->
+      <div class="address-bar">
+        <input 
+          type="text" 
+          [(ngModel)]="leftPane.currentPath"
+          (keyup.enter)="navigateFromAddressBar(leftPane, leftPane.currentPath)"
+          class="address-input"
+          placeholder="Enter path..."
+        />
+        <button (click)="navigateToParent(leftPane)" class="btn-icon" title="Up">⬆️</button>
+        <button (click)="refresh(leftPane)" class="btn-icon" title="Refresh">🔄</button>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <input 
+          type="text"
+          [(ngModel)]="leftPane.filterText"
+          (ngModelChange)="onFilterChange(leftPane)"
+          class="filter-input"
+          placeholder="Filter: name, ext:pdf, type:dir, size>1mb..."
+        />
+        <button 
+          *ngIf="leftPane.filterText"
+          (click)="clearFilter(leftPane)" 
+          class="btn-icon"
+          title="Clear filter"
+        >
+          ✕
+        </button>
+        <span class="filter-count" *ngIf="leftPane.filterText">
+          {{ leftPane.filteredEntries.length }} / {{ leftPane.entries.length }}
+        </span>
+      </div>
+
+      <!-- Action Bar -->
+      <div class="action-bar">
+        <button (click)="createNewFolder(leftPane)" class="btn-small">➕ Folder</button>
+        <button (click)="deleteSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0" class="btn-small">
           🗑️ Delete ({{ leftPane.selectedFiles.size }})
         </button>
-        <button (click)="copyToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
+        <button (click)="copyToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0" class="btn-small">
           ➡️ Copy →
         </button>
-        <button (click)="moveToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
+        <button (click)="moveToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0" class="btn-small">
           ➡️ Move →
         </button>
       </div>
 
+      <!-- File List -->
       <div class="pane-content">
         <div *ngIf="leftPane.loading" class="loading">Loading...</div>
         <div *ngIf="leftPane.error" class="error">{{ leftPane.error }}</div>
         
         <div *ngIf="!leftPane.loading && !leftPane.error" class="file-list">
           <div 
-            *ngFor="let entry of leftPane.entries"
+            *ngFor="let entry of leftPane.filteredEntries"
             class="file-entry"
             [class.selected]="isSelected(leftPane, entry)"
             [class.directory]="entry.type === FileType.DIRECTORY"
@@ -64,32 +160,98 @@
 
     <!-- Right Pane -->
     <div class="pane">
-      <div class="pane-header">
-        <button (click)="navigateToParent(rightPane)" class="nav-button">⬆️ Up</button>
-        <div class="path">{{ rightPane.currentPath || '/' }}</div>
-        <button (click)="refresh(rightPane)" class="refresh-button">🔄</button>
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <div class="tabs">
+          <div 
+            *ngFor="let tab of getTabs('right')"
+            class="tab"
+            [class.active]="tab.isActive"
+            [class.pinned]="tab.isPinned"
+            (click)="switchTab(rightPane, tab.id)"
+          >
+            <span class="tab-icon">📁</span>
+            <span class="tab-title">{{ tab.title }}</span>
+            <button 
+              *ngIf="tab.isPinned" 
+              class="tab-pin"
+              (click)="toggleTabPin(rightPane, tab.id, $event)"
+              title="Unpin tab"
+            >
+              📌
+            </button>
+            <button 
+              *ngIf="!tab.isPinned" 
+              class="tab-close"
+              (click)="closeTab(rightPane, tab.id); $event.stopPropagation()"
+              title="Close tab"
+            >
+              ✕
+            </button>
+          </div>
+          <button class="tab-new" (click)="addTab(rightPane)" title="New tab">
+            ➕
+          </button>
+        </div>
       </div>
 
-      <div class="pane-actions">
-        <button (click)="copyToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
+      <!-- Address Bar -->
+      <div class="address-bar">
+        <input 
+          type="text" 
+          [(ngModel)]="rightPane.currentPath"
+          (keyup.enter)="navigateFromAddressBar(rightPane, rightPane.currentPath)"
+          class="address-input"
+          placeholder="Enter path..."
+        />
+        <button (click)="navigateToParent(rightPane)" class="btn-icon" title="Up">⬆️</button>
+        <button (click)="refresh(rightPane)" class="btn-icon" title="Refresh">🔄</button>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <input 
+          type="text"
+          [(ngModel)]="rightPane.filterText"
+          (ngModelChange)="onFilterChange(rightPane)"
+          class="filter-input"
+          placeholder="Filter: name, ext:pdf, type:dir, size>1mb..."
+        />
+        <button 
+          *ngIf="rightPane.filterText"
+          (click)="clearFilter(rightPane)" 
+          class="btn-icon"
+          title="Clear filter"
+        >
+          ✕
+        </button>
+        <span class="filter-count" *ngIf="rightPane.filterText">
+          {{ rightPane.filteredEntries.length }} / {{ rightPane.entries.length }}
+        </span>
+      </div>
+
+      <!-- Action Bar -->
+      <div class="action-bar">
+        <button (click)="copyToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0" class="btn-small">
           ⬅️ Copy ←
         </button>
-        <button (click)="moveToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
+        <button (click)="moveToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0" class="btn-small">
           ⬅️ Move ←
         </button>
-        <button (click)="deleteSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
+        <button (click)="deleteSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0" class="btn-small">
           🗑️ Delete ({{ rightPane.selectedFiles.size }})
         </button>
-        <button (click)="createNewFolder(rightPane)">➕ New Folder</button>
+        <button (click)="createNewFolder(rightPane)" class="btn-small">➕ Folder</button>
       </div>
 
+      <!-- File List -->
       <div class="pane-content">
         <div *ngIf="rightPane.loading" class="loading">Loading...</div>
         <div *ngIf="rightPane.error" class="error">{{ rightPane.error }}</div>
         
         <div *ngIf="!rightPane.loading && !rightPane.error" class="file-list">
           <div 
-            *ngFor="let entry of rightPane.entries"
+            *ngFor="let entry of rightPane.filteredEntries"
             class="file-entry"
             [class.selected]="isSelected(rightPane, entry)"
             [class.directory]="entry.type === FileType.DIRECTORY"
