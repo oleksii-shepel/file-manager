@@ -1,0 +1,12 @@
+{
+  "name": "file-manager-client-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix angular-app run start",
+    "build": "npm --prefix angular-app run build",
+    "tauri": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && node ./angular-app/node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "npm run tauri -- dev",
+    "tauri:build": "npm run tauri -- build"
+  }
+}

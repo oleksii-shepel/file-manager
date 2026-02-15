@@ -1,0 +1,112 @@
+<div class="file-manager">
+  <div class="toolbar">
+    <h1>File Manager</h1>
+    <div class="toolbar-actions">
+      <button (click)="toggleShowHidden()" [class.active]="showHidden">
+        {{ showHidden ? 'Hide' : 'Show' }} Hidden Files
+      </button>
+      <input 
+        type="text" 
+        [(ngModel)]="searchQuery" 
+        placeholder="Search files..." 
+        class="search-input"
+      />
+    </div>
+  </div>
+
+  <div class="panes-container">
+    <!-- Left Pane -->
+    <div class="pane">
+      <div class="pane-header">
+        <button (click)="navigateToParent(leftPane)" class="nav-button">⬆️ Up</button>
+        <div class="path">{{ leftPane.currentPath || '/' }}</div>
+        <button (click)="refresh(leftPane)" class="refresh-button">🔄</button>
+      </div>
+
+      <div class="pane-actions">
+        <button (click)="createNewFolder(leftPane)">➕ New Folder</button>
+        <button (click)="deleteSelected(leftPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          🗑️ Delete ({{ leftPane.selectedFiles.size }})
+        </button>
+        <button (click)="copyToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          ➡️ Copy →
+        </button>
+        <button (click)="moveToOtherPane(leftPane, rightPane)" [disabled]="leftPane.selectedFiles.size === 0">
+          ➡️ Move →
+        </button>
+      </div>
+
+      <div class="pane-content">
+        <div *ngIf="leftPane.loading" class="loading">Loading...</div>
+        <div *ngIf="leftPane.error" class="error">{{ leftPane.error }}</div>
+        
+        <div *ngIf="!leftPane.loading && !leftPane.error" class="file-list">
+          <div 
+            *ngFor="let entry of leftPane.entries"
+            class="file-entry"
+            [class.selected]="isSelected(leftPane, entry)"
+            [class.directory]="entry.type === FileType.DIRECTORY"
+            (click)="toggleSelection(leftPane, entry)"
+            (dblclick)="navigateToPath(leftPane, entry)"
+          >
+            <span class="file-icon">{{ getFileIcon(entry) }}</span>
+            <div class="file-info">
+              <div class="file-name">{{ entry.name }}</div>
+              <div class="file-details">
+                <span class="file-size">{{ formatSize(entry.size) }}</span>
+                <span class="file-date">{{ formatDate(entry.modified) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Pane -->
+    <div class="pane">
+      <div class="pane-header">
+        <button (click)="navigateToParent(rightPane)" class="nav-button">⬆️ Up</button>
+        <div class="path">{{ rightPane.currentPath || '/' }}</div>
+        <button (click)="refresh(rightPane)" class="refresh-button">🔄</button>
+      </div>
+
+      <div class="pane-actions">
+        <button (click)="copyToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          ⬅️ Copy ←
+        </button>
+        <button (click)="moveToOtherPane(rightPane, leftPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          ⬅️ Move ←
+        </button>
+        <button (click)="deleteSelected(rightPane)" [disabled]="rightPane.selectedFiles.size === 0">
+          🗑️ Delete ({{ rightPane.selectedFiles.size }})
+        </button>
+        <button (click)="createNewFolder(rightPane)">➕ New Folder</button>
+      </div>
+
+      <div class="pane-content">
+        <div *ngIf="rightPane.loading" class="loading">Loading...</div>
+        <div *ngIf="rightPane.error" class="error">{{ rightPane.error }}</div>
+        
+        <div *ngIf="!rightPane.loading && !rightPane.error" class="file-list">
+          <div 
+            *ngFor="let entry of rightPane.entries"
+            class="file-entry"
+            [class.selected]="isSelected(rightPane, entry)"
+            [class.directory]="entry.type === FileType.DIRECTORY"
+            (click)="toggleSelection(rightPane, entry)"
+            (dblclick)="navigateToPath(rightPane, entry)"
+          >
+            <span class="file-icon">{{ getFileIcon(entry) }}</span>
+            <div class="file-info">
+              <div class="file-name">{{ entry.name }}</div>
+              <div class="file-details">
+                <span class="file-size">{{ formatSize(entry.size) }}</span>
+                <span class="file-date">{{ formatDate(entry.modified) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
