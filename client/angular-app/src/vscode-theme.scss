@@ -1,0 +1,158 @@
+/* ==========================
+   VS Code Theme System
+   Complete color tokens matching VS Code Dark+
+   ========================== */
+
+:root {
+  /* === Core Background Colors === */
+  --vsc-editor-background: #1e1e1e;
+  --vsc-sidebar-background: #252526;
+  --vsc-activitybar-background: #333333;
+  --vsc-statusbar-background: #007acc;
+  --vsc-panel-background: #252526;
+  --vsc-titlebar-background: #3c3c3c;
+  
+  /* === Text Colors === */
+  --vsc-foreground: #cccccc;
+  --vsc-foreground-dim: #888888;
+  --vsc-foreground-bright: #ffffff;
+  --vsc-text-link: #3794ff;
+  
+  /* === Border Colors === */
+  --vsc-border: #454545;
+  --vsc-border-subtle: #3a3a3a;
+  --vsc-border-bright: #5a5a5a;
+  
+  /* === Interactive Colors === */
+  --vsc-button-background: #0e639c;
+  --vsc-button-hover: #1177bb;
+  --vsc-button-secondary: #3a3d41;
+  --vsc-button-secondary-hover: #45494e;
+  
+  /* === Input Colors === */
+  --vsc-input-background: #3c3c3c;
+  --vsc-input-border: #3c3c3c;
+  --vsc-input-foreground: #cccccc;
+  --vsc-input-placeholder: #767676;
+  --vsc-input-focus-border: #007acc;
+  
+  /* === Selection Colors === */
+  --vsc-list-hover-background: #2a2d2e;
+  --vsc-list-active-background: #094771;
+  --vsc-list-focus-background: #062f4a;
+  --vsc-list-inactive-selection: #37373d;
+  
+  /* === Accent Colors === */
+  --vsc-accent-blue: #007acc;
+  --vsc-accent-green: #89d185;
+  --vsc-accent-yellow: #d7ba7d;
+  --vsc-accent-orange: #ce9178;
+  --vsc-accent-red: #f48771;
+  --vsc-accent-purple: #c586c0;
+  
+  /* === Status Colors === */
+  --vsc-error: #f48771;
+  --vsc-warning: #cca700;
+  --vsc-info: #3794ff;
+  --vsc-success: #89d185;
+  
+  /* === Badge Colors === */
+  --vsc-badge-background: #4d4d4d;
+  --vsc-badge-foreground: #ffffff;
+  
+  /* === Scrollbar === */
+  --vsc-scrollbar-track: #1e1e1e;
+  --vsc-scrollbar-thumb: #424242;
+  --vsc-scrollbar-thumb-hover: #4f4f4f;
+  
+  /* === Shadows === */
+  --vsc-shadow: rgba(0, 0, 0, 0.36);
+  --vsc-widget-shadow: 0 5px 8px 0 rgba(0, 0, 0, 0.36);
+  
+  /* === Typography === */
+  --vsc-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --vsc-font-family-mono: Consolas, "Courier New", monospace;
+  --vsc-font-size: 13px;
+  --vsc-font-size-small: 12px;
+  --vsc-font-size-large: 14px;
+  --vsc-line-height: 1.4;
+  
+  /* === Spacing === */
+  --vsc-padding-xs: 2px;
+  --vsc-padding-sm: 4px;
+  --vsc-padding-md: 8px;
+  --vsc-padding-lg: 12px;
+  --vsc-padding-xl: 16px;
+  
+  /* === Border Radius === */
+  --vsc-border-radius: 3px;
+  --vsc-border-radius-sm: 2px;
+  --vsc-border-radius-lg: 4px;
+  
+  /* === Transitions === */
+  --vsc-transition-fast: 0.1s ease;
+  --vsc-transition-normal: 0.2s ease;
+  
+  /* === Z-Index Layers === */
+  --vsc-z-base: 0;
+  --vsc-z-dropdown: 1000;
+  --vsc-z-modal: 2000;
+  
+  /* === Layout === */
+  --vsc-titlebar-height: 35px;
+  --vsc-activitybar-width: 48px;
+  --vsc-statusbar-height: 22px;
+  
+  /* Legacy compatibility */
+  --vsc-background: var(--vsc-editor-background);
+  --vsc-text: var(--vsc-foreground);
+  --vsc-muted: var(--vsc-foreground-dim);
+  --vsc-accent: var(--vsc-accent-blue);
+  --vsc-radius: var(--vsc-border-radius);
+  --vsc-gap-xs: var(--vsc-padding-xs);
+  --vsc-gap-sm: var(--vsc-padding-sm);
+  --vsc-gap-md: var(--vsc-padding-md);
+  --vsc-gap-lg: var(--vsc-padding-lg);
+}
+
+/* === Light Theme === */
+.vscode-light {
+  --vsc-editor-background: #ffffff;
+  --vsc-sidebar-background: #f3f3f3;
+  --vsc-activitybar-background: #2c2c2c;
+  --vsc-panel-background: #f3f3f3;
+  --vsc-titlebar-background: #dddddd;
+  
+  --vsc-foreground: #616161;
+  --vsc-foreground-dim: #999999;
+  --vsc-foreground-bright: #000000;
+  
+  --vsc-border: #d4d4d4;
+  --vsc-border-subtle: #e5e5e5;
+  
+  --vsc-button-background: #007acc;
+  --vsc-button-hover: #005ba1;
+  --vsc-button-secondary: #e5e5e5;
+  --vsc-button-secondary-hover: #d4d4d4;
+  
+  --vsc-input-background: #ffffff;
+  --vsc-input-border: #cecece;
+  --vsc-input-foreground: #616161;
+  
+  --vsc-list-hover-background: #e8e8e8;
+  --vsc-list-active-background: #0060c0;
+  
+  --vsc-scrollbar-track: #f3f3f3;
+  --vsc-scrollbar-thumb: #c4c4c4;
+  --vsc-scrollbar-thumb-hover: #a4a4a4;
+}
+
+/* === Compact Mode === */
+.compact-mode {
+  --vsc-font-size: 12px;
+  --vsc-padding-xs: 1px;
+  --vsc-padding-sm: 3px;
+  --vsc-padding-md: 6px;
+  --vsc-titlebar-height: 30px;
+  --vsc-statusbar-height: 20px;
+}

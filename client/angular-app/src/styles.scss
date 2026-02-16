@@ -1,3 +1,6 @@
+/* Import VS Code theme tokens */
+@import './vscode-theme.scss';
+
 * {
   box-sizing: border-box;
 }
@@ -11,89 +14,205 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  font-family: var(--vsc-font-family);
+  font-size: var(--vsc-font-size);
+  line-height: var(--vsc-line-height);
+  background: var(--vsc-editor-background);
+  color: var(--vsc-foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+code, pre {
+  font-family: var(--vsc-font-family-mono);
 }
 
-/* ==========================
-   VS Code-like Theme Tokens
-   ========================== */
-
-:root {
-  /* Colors - dark (default) */
-  --vsc-background: #1e1e1e;
-  --vsc-panel-background: #252526;
-  --vsc-border: #3e3e42;
-  --vsc-accent: #007acc;
-  --vsc-text: #d4d4d4;
-  --vsc-muted: #858585;
-  --vsc-success: #4caf50;
-
-  /* Spacing */
-  --vsc-gap-xs: 0.25rem;
-  --vsc-gap-sm: 0.5rem;
-  --vsc-gap-md: 0.75rem;
-  --vsc-gap-lg: 1rem;
-
-  /* Sizes */
-  --vsc-font-size: 0.9rem;
-  --vsc-compact-font-size: 0.85rem;
-  --vsc-radius: 4px;
+/* === Global Scrollbar Styling === */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-/* Light theme overrides */
-.vscode-light {
-  --vsc-background: #ffffff;
-  --vsc-panel-background: #f3f3f3;
-  --vsc-border: #e1e1e1;
-  --vsc-accent: #0060a7;
-  --vsc-text: #242424;
-  --vsc-muted: #6b6b6b;
-  --vsc-success: #18873a;
+::-webkit-scrollbar-track {
+  background: var(--vsc-scrollbar-track);
 }
 
-/* Compact mode reduces padding and font-size for mouse-oriented dense layouts */
-.compact-mode {
-  --vsc-font-size: var(--vsc-compact-font-size);
-  --vsc-gap-xs: 0.125rem;
-  --vsc-gap-sm: 0.25rem;
-  --vsc-gap-md: 0.5rem;
-  --vsc-gap-lg: 0.75rem;
+::-webkit-scrollbar-thumb {
+  background: var(--vsc-scrollbar-thumb);
+  border-radius: 10px;
 }
 
-/* Compact-mode specific tweaks for controls */
-.compact-mode .btn,
-.compact-mode .btn-small,
-.compact-mode .btn-icon,
-.compact-mode .tool-btn {
-  padding: 0.15rem 0.4rem !important;
-  font-size: var(--vsc-compact-font-size) !important;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vsc-scrollbar-thumb-hover);
 }
 
-.compact-mode .toggle-switch {
-  width: 36px;
-  height: 20px;
+/* === Focus Outline === */
+:focus {
+  outline: 1px solid var(--vsc-input-focus-border);
+  outline-offset: -1px;
 }
 
-.compact-mode .toggle-slider:before {
-  height: 14px;
-  width: 14px;
-  left: 3px;
-  bottom: 3px;
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
-.compact-mode .address-input-wrapper {
-  padding: calc(var(--vsc-gap-xs)) calc(var(--vsc-gap-sm));
+/* === Selection === */
+::selection {
+  background: var(--vsc-list-active-background);
+  color: var(--vsc-foreground-bright);
 }
 
-/* Utility to apply tokens to body/panels */
-body {
-  background: var(--vsc-background);
-  color: var(--vsc-text);
+/* === Links === */
+a {
+  color: var(--vsc-text-link);
+  text-decoration: none;
 }
 
+a:hover {
+  text-decoration: underline;
+}
+
+/* === Buttons (VS Code Style) === */
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vsc-padding-sm);
+  padding: var(--vsc-padding-sm) var(--vsc-padding-md);
+  background: var(--vsc-button-background);
+  color: var(--vsc-foreground-bright);
+  border: 1px solid transparent;
+  border-radius: var(--vsc-border-radius-sm);
+  font-family: var(--vsc-font-family);
+  font-size: var(--vsc-font-size);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--vsc-transition-fast);
+  
+  &:hover:not(:disabled) {
+    background: var(--vsc-button-hover);
+  }
+  
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  &.secondary {
+    background: var(--vsc-button-secondary);
+    
+    &:hover:not(:disabled) {
+      background: var(--vsc-button-secondary-hover);
+    }
+  }
+  
+  &.icon-only {
+    padding: var(--vsc-padding-sm);
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* === Input Fields (VS Code Style) === */
+input[type="text"],
+input[type="search"],
+input[type="number"],
+textarea {
+  padding: var(--vsc-padding-sm) var(--vsc-padding-md);
+  background: var(--vsc-input-background);
+  color: var(--vsc-input-foreground);
+  border: 1px solid var(--vsc-input-border);
+  border-radius: var(--vsc-border-radius-sm);
+  font-family: var(--vsc-font-family);
+  font-size: var(--vsc-font-size);
+  transition: border-color var(--vsc-transition-fast);
+  
+  &::placeholder {
+    color: var(--vsc-input-placeholder);
+  }
+  
+  &:focus {
+    border-color: var(--vsc-input-focus-border);
+    outline: none;
+  }
+}
+
+/* === Badges === */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--vsc-padding-xs) var(--vsc-padding-sm);
+  background: var(--vsc-badge-background);
+  color: var(--vsc-badge-foreground);
+  border-radius: 11px;
+  font-size: var(--vsc-font-size-small);
+  font-weight: 600;
+  min-width: 18px;
+  height: 18px;
+}
+
+/* === Kbd Styling === */
+kbd {
+  display: inline-block;
+  padding: var(--vsc-padding-xs) var(--vsc-padding-sm);
+  background: var(--vsc-input-background);
+  border: 1px solid var(--vsc-border);
+  border-radius: var(--vsc-border-radius-sm);
+  font-family: var(--vsc-font-family-mono);
+  font-size: var(--vsc-font-size-small);
+  color: var(--vsc-foreground);
+}
+
+/* === Loading Spinner === */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--vsc-border);
+  border-top-color: var(--vsc-accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* === Utility Classes === */
+.text-muted {
+  color: var(--vsc-foreground-dim);
+}
+
+.text-error {
+  color: var(--vsc-error);
+}
+
+.text-warning {
+  color: var(--vsc-warning);
+}
+
+.text-success {
+  color: var(--vsc-success);
+}
+
+.text-mono {
+  font-family: var(--vsc-font-family-mono);
+}
+
+/* === Compact Mode Adjustments === */
+.compact-mode button,
+.compact-mode .btn {
+  padding: var(--vsc-padding-xs) var(--vsc-padding-sm);
+  font-size: var(--vsc-font-size-small);
+}
+
+.compact-mode input,
+.compact-mode textarea {
+  padding: var(--vsc-padding-xs) var(--vsc-padding-sm);
+  font-size: var(--vsc-font-size-small);
+}
