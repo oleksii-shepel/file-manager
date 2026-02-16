@@ -213,6 +213,12 @@
   flex-direction: column;
   background: #1e1e1e;
   overflow: hidden;
+  min-height: 0;  /* Important for flex children to scroll properly */
+}
+
+// Ensure the tab bar has room
+.pane > :first-child {
+  flex-shrink: 0; /* Prevent tab bar from shrinking */
 }
 
 // ============================================================================
@@ -223,7 +229,12 @@
   display: flex;
   background: #2d2d30;
   border-bottom: 1px solid #3e3e42;
+  min-height: 36px;  /* Force minimum height */
+  height: auto;      /* Allow content to determine height */
   overflow-x: auto;
+  overflow-y: hidden; /* Prevent vertical scroll */
+  position: relative;
+  z-index: 5;
 
   &::-webkit-scrollbar {
     height: 4px;
@@ -236,6 +247,114 @@
   &::-webkit-scrollbar-thumb {
     background: #424242;
     border-radius: 2px;
+  }
+}
+
+.tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;      /* Take full height of tab-bar */
+  align-items: center; /* Center tabs vertically */
+}
+
+.tab {
+  display: inline-flex;  /* Changed from flex to inline-flex */
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;  /* Reduced from 0.6rem 1rem */
+  background: #2d2d30;
+  border-right: 1px solid #3e3e42;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 100px;      /* Reduced from 120px */
+  max-width: 180px;      /* Reduced from 200px */
+  height: 100%;          /* Take full height */
+  position: relative;
+  box-sizing: border-box; /* Include padding in height calculation */
+  line-height: 1.2;       /* Ensure consistent line height */
+
+  &:hover {
+    background: #3c3c3c;
+  }
+
+  &.active {
+    background: #1e1e1e;
+    border-bottom: 2px solid #007acc;
+    /* Remove any margin/padding that might affect height */
+    margin-bottom: 0;
+    padding-bottom: 0.5rem;
+  }
+
+  &.pinned {
+    border-left: 3px solid #f9a825;
+  }
+
+  .tab-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    line-height: 1; /* Prevent extra height from emoji */
+  }
+
+  .tab-title {
+    flex: 1;
+    font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+
+  .tab-pin,
+  .tab-close {
+    display: none;
+    padding: 0.2rem 0.4rem;
+    background: transparent;
+    border: none;
+    color: #d4d4d4;
+    cursor: pointer;
+    font-size: 0.75rem;
+    opacity: 0.7;
+    transition: all 0.2s;
+    border-radius: 3px;
+    line-height: 1; /* Prevent extra height */
+
+    &:hover {
+      opacity: 1;
+      background: #505050;
+    }
+  }
+
+  &:hover .tab-pin,
+  &:hover .tab-close {
+    display: inline-flex;  /* Changed from block */
+    align-items: center;
+    justify-content: center;
+  }
+
+  &.pinned .tab-pin {
+    display: inline-flex;
+  }
+}
+
+.tab-new {
+  display: inline-flex;  /* Changed from flex */
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;    /* Horizontal padding only */
+  background: transparent;
+  border: none;
+  color: #d4d4d4;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+  opacity: 0.6;
+  height: 100%;          /* Take full height */
+  min-width: 32px;       /* Minimum width for click area */
+
+  &:hover {
+    opacity: 1;
+    background: #3c3c3c;
   }
 }
 
@@ -329,35 +448,6 @@
   &:hover {
     opacity: 1;
     background: #3c3c3c;
-  }
-}
-
-// ============================================================================
-// Address Bar
-// ============================================================================
-
-.address-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
-
-  .address-input {
-    flex: 1;
-    padding: 0.5rem 0.75rem;
-    background: #3c3c3c;
-    border: 1px solid #3e3e42;
-    border-radius: 4px;
-    color: #d4d4d4;
-    font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
-
-    &:focus {
-      outline: none;
-      border-color: #007acc;
-    }
   }
 }
 

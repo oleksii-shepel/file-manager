@@ -83,17 +83,14 @@
       </div>
 
       <!-- Address Bar -->
-      <div class="address-bar">
-        <input 
-          type="text" 
-          [(ngModel)]="leftPane.currentPath"
-          (keyup.enter)="navigateFromAddressBar(leftPane, leftPane.currentPath)"
-          class="address-input"
-          placeholder="Enter path..."
-        />
-        <button (click)="navigateToParent(leftPane)" class="btn-icon" title="Up">⬆️</button>
-        <button (click)="refresh(leftPane)" class="btn-icon" title="Refresh">🔄</button>
-      </div>
+      <app-address-bar-autocomplete
+        [initialPath]="leftPane.currentPath"
+        [paneId]="'left'"
+        [placeholder]="'Enter path...'"
+        (pathChange)="navigateFromAddressBar(leftPane, $event)"
+        (navigateUp)="navigateToParent(leftPane)"
+        (refresh)="refresh(leftPane)"
+      ></app-address-bar-autocomplete>
 
       <!-- Filter Bar -->
       <div class="filter-bar">
@@ -196,17 +193,14 @@
       </div>
 
       <!-- Address Bar -->
-      <div class="address-bar">
-        <input 
-          type="text" 
-          [(ngModel)]="rightPane.currentPath"
-          (keyup.enter)="navigateFromAddressBar(rightPane, rightPane.currentPath)"
-          class="address-input"
-          placeholder="Enter path..."
-        />
-        <button (click)="navigateToParent(rightPane)" class="btn-icon" title="Up">⬆️</button>
-        <button (click)="refresh(rightPane)" class="btn-icon" title="Refresh">🔄</button>
-      </div>
+      <app-address-bar-autocomplete
+        [initialPath]="rightPane.currentPath"
+        [paneId]="'right'"
+        [placeholder]="'Enter path...'"
+        (pathChange)="navigateFromAddressBar(rightPane, $event)"
+        (navigateUp)="navigateToParent(rightPane)"
+        (refresh)="refresh(rightPane)"
+      ></app-address-bar-autocomplete>
 
       <!-- Filter Bar -->
       <div class="filter-bar">

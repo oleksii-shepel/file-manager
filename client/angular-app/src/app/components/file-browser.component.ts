@@ -11,11 +11,10 @@ import { WorkspaceConfig, TabInfo, FilterQuery } from '@shared/protocol-enhanced
 import { KeyboardHelpComponent } from './keyboard-help.component';
 import { KeyboardService } from '../services/keyboard.service';
 import { ShortcutCallbacks, ShortcutRegistryService } from '../services/shortcut-registry.service';
-// PHASE 2 IMPORTS - NEW
 import { GlobalSearchComponent } from './global-search.component';
 import { PathHistoryService } from '../services/path-history.service';
 import { PathHistoryViewerComponent } from './path-history-viewer.component';
-
+import { AddressBarAutocompleteComponent } from './address-bar-autocomplete.component';
 interface BrowserPane {
   id: string;
   currentPath: string;
@@ -37,7 +36,8 @@ interface BrowserPane {
     FormsModule,
     KeyboardHelpComponent,
     GlobalSearchComponent,
-    PathHistoryViewerComponent
+    PathHistoryViewerComponent,
+    AddressBarAutocompleteComponent
   ],
   templateUrl: './file-browser.component.html',
   styleUrls: ['./file-browser.component.scss']
@@ -63,9 +63,8 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     private apiService: ApiService,
     private workspaceService: WorkspaceService,
     private filterService: FilterService,
-    private keyboardService: KeyboardService,
     private shortcutRegistry: ShortcutRegistryService,
-    private pathHistoryService: PathHistoryService // PHASE 2: Added PathHistoryService
+    private pathHistoryService: PathHistoryService
   ) {}
 
   ngOnInit(): void {
