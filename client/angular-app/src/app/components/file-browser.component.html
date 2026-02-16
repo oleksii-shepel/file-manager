@@ -1,33 +1,33 @@
-<div class="file-manager-enhanced" (click)="closeWorkspaceMenu()">
+<div class="file-manager-enhanced">
   <!-- Top Toolbar with Workspace Selector -->
   <div class="toolbar">
     <div class="toolbar-left">
-      <div class="workspace-selector" (click)="toggleWorkspaceMenu($event)">
+      <div class="workspace-selector" (click)="showWorkspaceMenu = !showWorkspaceMenu">
         <span class="workspace-icon">{{ activeWorkspace?.icon || '📁' }}</span>
         <span class="workspace-name">{{ activeWorkspace?.name || 'Default' }}</span>
         <span class="workspace-arrow">▼</span>
       </div>
 
       <!-- Workspace Dropdown Menu -->
-      <div class="workspace-menu" *ngIf="showWorkspaceMenu" (click)="$event.stopPropagation()">
+      <div class="workspace-menu" *ngIf="showWorkspaceMenu">
         <div class="workspace-menu-header">
           <h3>Workspaces</h3>
-          <button (click)="createNewWorkspace(); $event.stopPropagation()" class="btn-icon">➕</button>
+          <button (click)="createNewWorkspace()" class="btn-icon">➕</button>
         </div>
         <div class="workspace-list">
           <div 
             *ngFor="let workspace of workspaceList"
             class="workspace-item"
             [class.active]="workspace.id === activeWorkspace?.id"
-            (click)="switchWorkspace(workspace.id); $event.stopPropagation()"
+            (click)="switchWorkspace(workspace.id)"
           >
             <span class="workspace-icon">{{ workspace.icon }}</span>
             <span class="workspace-name">{{ workspace.name }}</span>
           </div>
         </div>
         <div class="workspace-menu-footer">
-          <button (click)="renameCurrentWorkspace(); $event.stopPropagation()" class="btn-small">Rename</button>
-          <button (click)="deleteCurrentWorkspace(); $event.stopPropagation()" class="btn-small btn-danger">Delete</button>
+          <button (click)="renameCurrentWorkspace()" class="btn-small">Rename</button>
+          <button (click)="deleteCurrentWorkspace()" class="btn-small btn-danger">Delete</button>
         </div>
       </div>
     </div>
@@ -272,6 +272,11 @@
     </div>
   </div>
 
-  <!-- Add keyboard help modal at the end -->
+  <app-path-history-viewer></app-path-history-viewer>
+  
+  <app-global-search 
+    (resultSelected)="onGlobalSearchResult($event)">
+  </app-global-search>
+
   <app-keyboard-help></app-keyboard-help>
 </div>

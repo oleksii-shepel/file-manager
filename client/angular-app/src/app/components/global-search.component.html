@@ -1,0 +1,228 @@
+<div class="global-search-overlay" *ngIf="isVisible" (click)="hide()">
+  <div class="global-search-modal" (click)="$event.stopPropagation()">
+    <!-- Search Header -->
+    <div class="search-header">
+      <div class="search-input-container">
+        <span class="search-icon">🔍</span>
+        <input
+          #searchInput
+          type="text"
+          [(ngModel)]="searchQuery"
+          (ngModelChange)="onSearchChange()"
+          placeholder="Search files and folders..."
+          class="search-input"
+          autofocus
+        />
+        <button
+          *ngIf="searchQuery"
+          (click)="clearSearch()"
+          class="btn-clear"
+          title="Clear search"
+        >
+          ✕
+        </button>
+      </div>
+      
+      <!-- Search Stats -->
+      <div class="search-stats" *ngIf="!isSearching">
+        <span *ngIf="results.length > 0">
+          {{ results.length }} result<span *ngIf="results.length !== 1">s</span>
+        </span>
+        <span *ngIf="indexStats">
+          · {{ indexStats.totalFiles + indexStats.totalDirectories }} items indexed
+        </span>
+        <span *ngIf="indexStats?.isIndexing" class="indexing-indicator">
+          · Indexing...
+        </span>
+      </div>
+    </div>
+
+    <!-- Search Filters -->
+    <div class="search-filters">
+      <button
+        (click)="toggleFilter('all')"
+        [class.active]="activeFilters.has('all')"
+        class="filter-btn"
+      >
+        All
+      </button>
+      <button
+        (click)="toggleFilter('files')"
+        [class.active]="activeFilters.has('files')"
+        class="filter-btn"
+      >
+        📄 Files
+      </button>
+      <button
+        (click)="toggleFilter('folders')"
+        [class.active]="activeFilters.has('folders')"
+        class="filter-btn"
+      >
+        📁 Folders
+      </button>
+      <button
+        (click)="toggleFilter('recent')"
+        [class.active]="activeFilters.has('recent')"
+        class="filter-btn"
+      >
+        🕒 Recent
+      </button>
+    </div>
+
+    <!-- Search Results -->
+    <div class="search-results">
+      <!-- Loading -->
+      <div *ngIf="isSearching" class="search-loading">
+        <div class="spinner"></div>
+        <p>Searching...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div *ngIf="!isSearching && results.length === 0 && searchQuery" class="search-empty">
+        <span class="empty-icon">🔍</span>
+        <p>No results found for "{{ searchQuery }}"</p>
+        <p class="empty-hint">Try a different search term or check your spelling</p>
+      </div>
+
+      <!-- Initial State -->
+      <div *ngIf="!isSearching && results.length === 0 && !searchQuery" class="search-initial">
+        <span class="initial-icon">⌨️</span>
+        <p>Start typing to search</p>
+        <div class="search-tips">
+          <h4>Search Tips:</h4>
+          <ul>
+            <li>Type any part of the file or folder name</li>
+            <li>Use filters to narrow results</li>
+            <li>Results are ranked by relevance</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Results List -->
+      <div *ngIf="!isSearching && results.length > 0" class="results-list">
+        <div
+          *ngFor="let result of results; let i = index"
+          class="result-item"
+          [class.selected]="i === selectedIndex"
+          (click)="selectResult(result)"
+          (mouseenter)="selectedIndex = i"
+        >
+          <div class="result-icon">
+            {{ getFileIcon(result.file) }}
+          </div>
+          
+          <div class="result-info">
+            <div class="result-name" [innerHTML]="result.highlightedName"></div>
+            <div class="result-path">{{ result.file.path }}</div>
+          </div>
+          
+          <div class="result-meta">
+            <span class="result-match-type" [class]="'match-' + result.matchType">
+              {{ result.matchType }}
+            </span>
+            <span class="result-score">{{ result.score.toFixed(0) }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search Footer -->
+    <div class="search-footer">
+      <div class="footer-left">
+        <kbd>↑</kbd><kbd>↓</kbd> Navigate
+        <kbd>Enter</kbd> Open
+        <kbd>Esc</kbd> Close
+      </div>
+      
+      <div class="footer-right">
+        <button (click)="refreshIndex()" class="btn-footer" title="Refresh search index">
+          🔄 Refresh Index
+        </button>
+        <button (click)="showSettings()" class="btn-footer" title="Search settings">
+          ⚙️ Settings
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Search Settings Modal -->
+<div class="settings-overlay" *ngIf="showSettingsModal" (click)="hideSettings()">
+  <div class="settings-modal" (click)="$event.stopPropagation()">
+    <div class="settings-header">
+      <h3>Search Settings</h3>
+      <button (click)="hideSettings()" class="btn-close">✕</button>
+    </div>
+
+    <div class="settings-content">
+      <div class="setting-group">
+        <label class="setting-label">
+          <input
+            type="checkbox"
+            [(ngModel)]="searchConfig.enableTypoTolerance"
+            (change)="updateSearchConfig()"
+          />
+          Enable typo tolerance
+        </label>
+        <p class="setting-description">
+          Find results even with minor spelling errors
+        </p>
+      </div>
+
+      <div class="setting-group">
+        <label class="setting-label">
+          <input
+            type="checkbox"
+            [(ngModel)]="searchConfig.searchHidden"
+            (change)="updateSearchConfig()"
+          />
+          Search hidden files
+        </label>
+        <p class="setting-description">
+          Include hidden files and folders in results
+        </p>
+      </div>
+
+      <div class="setting-group">
+        <label class="setting-label">
+          Max results:
+          <input
+            type="number"
+            [(ngModel)]="searchConfig.maxResults"
+            (change)="updateSearchConfig()"
+            min="10"
+            max="200"
+            class="setting-input"
+          />
+        </label>
+        <p class="setting-description">
+          Maximum number of results to display
+        </p>
+      </div>
+
+      <div class="setting-group">
+        <label class="setting-label">
+          Fuzzy threshold:
+          <input
+            type="range"
+            [(ngModel)]="searchConfig.fuzzyThreshold"
+            (change)="updateSearchConfig()"
+            min="0"
+            max="1"
+            step="0.1"
+            class="setting-slider"
+          />
+          <span class="setting-value">{{ searchConfig.fuzzyThreshold }}</span>
+        </label>
+        <p class="setting-description">
+          How strict fuzzy matching should be (0 = loose, 1 = strict)
+        </p>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button (click)="resetSettings()" class="btn-secondary">Reset to Defaults</button>
+      <button (click)="hideSettings()" class="btn-primary">Done</button>
+    </div>
+  </div>
+</div>

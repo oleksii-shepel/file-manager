@@ -11,6 +11,10 @@ import { WorkspaceConfig, TabInfo, FilterQuery } from '@shared/protocol-enhanced
 import { KeyboardHelpComponent } from './keyboard-help.component';
 import { KeyboardService } from '../services/keyboard.service';
 import { ShortcutCallbacks, ShortcutRegistryService } from '../services/shortcut-registry.service';
+// PHASE 2 IMPORTS - NEW
+import { GlobalSearchComponent } from './global-search.component';
+import { PathHistoryService } from '../services/path-history.service';
+import { PathHistoryViewerComponent } from './path-history-viewer.component';
 
 interface BrowserPane {
   id: string;
@@ -28,13 +32,20 @@ interface BrowserPane {
 @Component({
   selector: 'app-file-browser',
   standalone: true,
-  imports: [CommonModule, FormsModule, KeyboardHelpComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    KeyboardHelpComponent,
+    GlobalSearchComponent,
+    PathHistoryViewerComponent
+  ],
   templateUrl: './file-browser.component.html',
   styleUrls: ['./file-browser.component.scss']
 })
 export class FileBrowserComponent implements OnInit, OnDestroy {
   @ViewChild(KeyboardHelpComponent) keyboardHelp?: KeyboardHelpComponent;
-
+  @ViewChild(GlobalSearchComponent) globalSearch?: GlobalSearchComponent;
+  @ViewChild(PathHistoryViewerComponent) pathHistoryViewer?: PathHistoryViewerComponent;
 
   leftPane: BrowserPane = this.createEmptyPane('left');
   rightPane: BrowserPane = this.createEmptyPane('right');
@@ -53,7 +64,8 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     private workspaceService: WorkspaceService,
     private filterService: FilterService,
     private keyboardService: KeyboardService,
-    private shortcutRegistry: ShortcutRegistryService
+    private shortcutRegistry: ShortcutRegistryService,
+    private pathHistoryService: PathHistoryService // PHASE 2: Added PathHistoryService
   ) {}
 
   ngOnInit(): void {
@@ -247,6 +259,9 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
       // Update tab path (now uses silent mode to prevent reload loop)
       this.workspaceService.updateTabPath(pane.id, pane.currentTabId, path);
+      
+      // PHASE 2: Track in path history
+      this.pathHistoryService.addPath(path, pane.id);
     } catch (error: any) {
       pane.error = error.message || 'Failed to load directory';
       console.error('Failed to load directory:', error);
@@ -544,13 +559,28 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
 
   // Navigation shortcuts
   private openGlobalSearch(): void {
-    // TODO: Implement global search modal (Phase 2)
-    console.log('Global search - coming in Phase 2');
+    // PHASE 2: Updated to show global search modal
+    this.globalSearch?.show();
+  }
+
+  // PHASE 2: Added handler for global search results
+  onGlobalSearchResult(result: any): void {
+    const pane = this.getActivePane();
+    
+    if (result.file.type === FileType.DIRECTORY) {
+      this.loadDirectory(pane, result.file.path);
+    } else {
+      // Navigate to parent directory and select file
+      const parentPath = this.getParentPath(result.file.path);
+      this.loadDirectory(pane, parentPath).then(() => {
+        pane.selectedFiles.clear();
+        pane.selectedFiles.add(result.file.path);
+      });
+    }
   }
 
   private showPathHistory(): void {
-    // TODO: Implement path history modal (Phase 2)
-    console.log('Path history - coming in Phase 2');
+    this.pathHistoryViewer?.show();
   }
 
   private quickPathJump(): void {

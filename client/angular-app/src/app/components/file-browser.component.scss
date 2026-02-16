@@ -28,7 +28,6 @@
 
   .toolbar-left,
   .toolbar-right {
-    position: relative; // Needed for absolute positioned dropdown
     display: flex;
     gap: 0.5rem;
     align-items: center;
@@ -55,14 +54,9 @@
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
-  user-select: none; // Prevent text selection on click
 
   &:hover {
     background: #505050;
-  }
-
-  &:active {
-    background: #404040;
   }
 
   .workspace-icon {

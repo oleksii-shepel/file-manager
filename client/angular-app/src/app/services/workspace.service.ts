@@ -177,6 +177,7 @@ export class WorkspaceService {
 
   /**
    * Update workspace configuration
+   * @param silent - If true, don't emit workspace change (prevents reload loops)
    */
   updateWorkspace(workspaceId: string, updates: Partial<WorkspaceConfig>, silent: boolean = false): boolean {
     const workspaceList = this.workspacesSubject.value;
@@ -187,11 +188,22 @@ export class WorkspaceService {
     }
 
     Object.assign(workspace, updates);
-    this.saveWorkspaces(workspaceList);
-
-    // Update active workspace if it's the one being modified (unless silent)
-    if (!silent && workspace.id === this.activeWorkspaceSubject.value?.id) {
-      this.activeWorkspaceSubject.next(workspace);
+    
+    // Save to localStorage but don't trigger reload if silent
+    try {
+      localStorage.setItem(STORAGE_KEYS.WORKSPACES, JSON.stringify(workspaceList));
+      
+      // Only emit if not silent
+      if (!silent) {
+        this.workspacesSubject.next(workspaceList);
+        
+        // Update active workspace if it's the one being modified
+        if (workspace.id === this.activeWorkspaceSubject.value?.id) {
+          this.activeWorkspaceSubject.next(workspace);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save workspaces:', error);
     }
 
     return true;
@@ -304,6 +316,7 @@ export class WorkspaceService {
 
   /**
    * Update tab path (when navigating)
+   * IMPORTANT: Uses silent mode to prevent reload loops
    */
   updateTabPath(paneId: string, tabId: string, path: string): boolean {
     const workspace = this.activeWorkspaceSubject.value;
@@ -317,7 +330,8 @@ export class WorkspaceService {
     tab.path = path;
     tab.title = this.getPathTitle(path);
 
-    // Use silent mode to avoid triggering workspace reload
+    // CRITICAL FIX: Use silent mode to avoid triggering workspace reload
+    // This prevents the infinite loop: updateTabPath -> updateWorkspace -> emit -> loadWorkspaceState -> loadDirectory -> updateTabPath
     this.updateWorkspace(workspace.id, { [paneId === 'left' ? 'leftPane' : 'rightPane']: pane }, true);
     return true;
   }
