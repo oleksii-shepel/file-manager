@@ -413,12 +413,12 @@
       border-radius: 50%;
     }
 
-    .tab-title {
-      display: none;
-    }
-
+    .tab-title,
     .tab-close {
-      display: none !important;
+      width: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
     }
   }
 
@@ -450,7 +450,7 @@
 
   .tab-pin,
   .tab-close {
-    display: none;
+    display: inline-flex;
     width: 20px;
     height: 20px;
     padding: 0;
@@ -466,10 +466,12 @@
     align-items: center;
     justify-content: center;
     position: relative;
+    flex-shrink: 0;
 
     &:hover {
       background: rgba(255, 255, 255, 0.1);
       color: var(--vsc-foreground);
+      opacity: 1 !important;
     }
 
     &:active {
@@ -478,10 +480,6 @@
   }
 
   .tab-close {
-    display: inline-flex;
-    opacity: 0;
-    flex-shrink: 0; 
-    
     &::before {
       content: '✕';
       font-size: 14px;
@@ -501,13 +499,7 @@
 
   &:hover .tab-pin,
   &:hover .tab-close {
-    display: inline-flex;
     opacity: 0.7;
-  }
-
-  &:hover .tab-close:hover,
-  &:hover .tab-pin:hover {
-    opacity: 1;
   }
 
   // Pinned tabs always show pin icon
@@ -542,6 +534,13 @@
   transition: all var(--vsc-transition-fast);
   opacity: 0.5;
   height: 35px;
+
+  &::before {
+    content: '+';
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 300;
+  }
 
   &:hover {
     opacity: 1;
