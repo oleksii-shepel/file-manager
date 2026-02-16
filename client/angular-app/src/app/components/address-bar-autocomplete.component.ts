@@ -136,6 +136,7 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
       background: transparent;
       position: relative;
       z-index: auto;
+      font-size: var(--vsc-font-size);
     }
 
     /* Wrapper to contain both address bar and dropdown */
@@ -150,30 +151,25 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
       position: relative;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
+      gap: var(--vsc-gap-sm);
+      padding: var(--vsc-gap-sm) var(--vsc-gap-lg);
       background: transparent;
-      border-bottom: 1px solid #3e3e42;
-      transition: all 0.2s;
+      border-bottom: 1px solid var(--vsc-border);
+      transition: background 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
       z-index: 2;
       cursor: text;
+    }
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.05);
-      }
+    .address-bar-container:hover {
+      background: rgba(0,0,0,0.03);
+    }
 
-      &.focused {
-        background: rgba(0, 122, 204, 0.1);
-        
-        .address-input-wrapper {
-          border-color: #007acc;
-          box-shadow: 0 0 0 1px #007acc;
-        }
-      }
+    .address-bar-container.focused {
+      background: rgba(0, 122, 204, 0.06);
+    }
 
-      &.mouse-hover {
-        background: rgba(255, 255, 255, 0.02);
-      }
+    .address-bar-container.mouse-hover {
+      background: rgba(0,0,0,0.02);
     }
 
     .address-input-wrapper {
@@ -181,142 +177,138 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
       flex: 1;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      background: #1e1e1e;
-      border: 1px solid #3e3e42;
-      border-radius: 4px;
-      transition: all 0.2s;
+      gap: var(--vsc-gap-sm);
+      padding: var(--vsc-gap-sm) var(--vsc-gap-md);
+      background: var(--vsc-panel-background);
+      border: 1px solid var(--vsc-border);
+      border-radius: var(--vsc-radius);
+      box-sizing: border-box;
+      transition: background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
       cursor: text;
+    }
 
-      &:hover {
-        background: #252526;
-      }
+    .address-input-wrapper:hover {
+      background: rgba(0,0,0,0.04);
+    }
 
-      &:focus-within {
-        background: #252526;
-        border-color: #007acc;
-        box-shadow: 0 0 0 1px #007acc;
-      }
+    .address-input-wrapper:focus-within {
+      background: var(--vsc-panel-background);
+      border-color: var(--vsc-accent);
+      box-shadow: 0 0 0 1px var(--vsc-accent);
+    }
 
-      .address-icon {
-        font-size: 1rem;
-        opacity: 0.6;
-        pointer-events: none;
-      }
+    .address-input-wrapper .address-icon {
+      font-size: 1rem;
+      opacity: 0.7;
+      pointer-events: none;
+      color: var(--vsc-muted);
+    }
 
-      .address-input {
-        flex: 1;
-        background: transparent;
-        border: none;
-        color: #d4d4d4;
-        font-family: 'Courier New', monospace;
-        font-size: 0.9rem;
-        outline: none;
-        cursor: text;
+    .address-input-wrapper .address-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--vsc-text);
+      font-family: 'Courier New', monospace;
+      font-size: inherit;
+      outline: none;
+      cursor: text;
+    }
 
-        &::placeholder {
-          color: #858585;
-        }
-      }
+    .address-input-wrapper .address-input::placeholder {
+      color: var(--vsc-muted);
+    }
 
-      .btn-revert {
-        padding: 0.25rem 0.5rem;
-        background: transparent;
-        border: none;
-        color: #858585;
-        cursor: pointer;
-        font-size: 1rem;
-        transition: all 0.2s;
-        border-radius: 3px;
-        z-index: 3;
+    .address-input-wrapper .btn-revert {
+      padding: 0.15rem 0.4rem;
+      background: transparent;
+      border: none;
+      color: var(--vsc-muted);
+      cursor: pointer;
+      font-size: 0.95em;
+      transition: background 0.12s, color 0.12s;
+      border-radius: 3px;
+      z-index: 3;
+    }
 
-        &:hover {
-          background: #505050;
-          color: #d4d4d4;
-        }
-      }
+    .address-input-wrapper .btn-revert:hover {
+      background: rgba(0,0,0,0.06);
+      color: var(--vsc-text);
     }
 
     .address-actions {
       display: flex;
-      gap: 0.25rem;
+      gap: var(--vsc-gap-xs);
     }
 
     .btn-action {
-      padding: 0.4rem 0.6rem;
-      background: #252526;
-      border: 1px solid #3e3e42;
+      padding: 0.28rem 0.5rem;
+      background: var(--vsc-panel-background);
+      border: 1px solid var(--vsc-border);
       border-radius: 4px;
-      color: #d4d4d4;
+      color: var(--vsc-text);
       cursor: pointer;
-      font-size: 1rem;
-      transition: all 0.2s;
+      font-size: 0.95em;
+      transition: background 0.12s, transform 0.08s;
       z-index: 3;
+    }
 
-      &:hover {
-        background: #37373d;
-        border-color: #007acc;
-        transform: translateY(-1px);
-      }
+    .btn-action:hover {
+      background: rgba(0,0,0,0.06);
+      border-color: var(--vsc-accent);
+      transform: translateY(-1px);
+    }
 
-      &:active {
-        transform: translateY(0);
-      }
+    .btn-action:active {
+      transform: translateY(0);
     }
 
     /* Suggestions Dropdown */
     .suggestions-dropdown {
       position: absolute;
       top: 100%;
-      left: 1rem;
-      right: 1rem;
+      left: var(--vsc-gap-lg);
+      right: var(--vsc-gap-lg);
       margin-top: 0.25rem;
-      background: #1e1e1e;
-      border: 1px solid #007acc;
+      background: var(--vsc-panel-background);
+      border: 1px solid var(--vsc-accent);
       border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
       z-index: 1000;
       max-height: 400px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      animation: dropdownFadeIn 0.15s ease;
+      animation: dropdownFadeIn 0.12s ease;
     }
 
     @keyframes dropdownFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(-10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .suggestions-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid #3e3e42;
-      background: #252526;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--vsc-border);
+      background: var(--vsc-panel-background);
     }
 
     .suggestions-title {
       font-size: 0.85rem;
       font-weight: 600;
       text-transform: uppercase;
-      color: #007acc;
-      letter-spacing: 0.5px;
+      color: var(--vsc-accent);
+      letter-spacing: 0.4px;
     }
 
     .suggestions-count {
       font-size: 0.8rem;
-      padding: 0.2rem 0.6rem;
-      background: #007acc;
-      border-radius: 12px;
+      padding: 0.15rem 0.5rem;
+      background: var(--vsc-accent);
+      border-radius: 10px;
       color: white;
       font-weight: 600;
     }
@@ -324,146 +316,51 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
     .suggestions-list {
       flex: 1;
       overflow-y: auto;
-      padding: 0.25rem 0;
+      padding: 0.2rem 0;
       display: flex;
       flex-direction: column;
-
-      &::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      &::-webkit-scrollbar-track {
-        background: #1e1e1e;
-      }
-
-      &::-webkit-scrollbar-thumb {
-        background: #424242;
-        border-radius: 4px;
-
-        &:hover {
-          background: #4e4e4e;
-        }
-      }
     }
+
+    .suggestions-list::-webkit-scrollbar { width: 8px; }
+    .suggestions-list::-webkit-scrollbar-track { background: var(--vsc-panel-background); }
+    .suggestions-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.4); border-radius: 4px; }
 
     .suggestion-item {
       display: flex;
       flex-direction: row;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
       cursor: pointer;
-      transition: all 0.15s;
-      background: #1e1e1e;
+      transition: background 0.12s, border-color 0.12s;
+      background: var(--vsc-panel-background);
       border-left: 3px solid transparent;
       width: 100%;
-      flex-shrink: 0;
-
-      &:hover {
-        background: #2d2d30;
-        border-left-color: #3e3e42;
-      }
-
-      &.selected {
-        background: #0e4766;
-        border-left-color: #007acc;
-      }
-
-      .suggestion-icon {
-        font-size: 1.25rem;
-        flex-shrink: 0;
-      }
-
-      .suggestion-info {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .suggestion-path {
-        font-size: 0.9rem;
-        font-family: 'Courier New', monospace;
-        color: #d4d4d4;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        margin-bottom: 0.2rem;
-
-        ::ng-deep mark {
-          background: #007acc;
-          color: white;
-          padding: 0.1rem 0.2rem;
-          border-radius: 2px;
-          font-weight: 600;
-        }
-      }
-
-      .suggestion-meta {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.75rem;
-      }
-
-      .suggestion-type {
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        text-transform: uppercase;
-        font-weight: 700;
-        font-size: 0.7rem;
-        letter-spacing: 0.3px;
-        
-        &.type-history {
-          background: #16825d;
-          color: white;
-        }
-        
-        &.type-directory {
-          background: #0078d4;
-          color: white;
-        }
-        
-        &.type-fuzzy {
-          background: #ca5010;
-          color: white;
-        }
-      }
-
-      .suggestion-name {
-        color: #858585;
-      }
-
-      .suggestion-score {
-        font-size: 0.8rem;
-        color: #858585;
-        font-weight: 600;
-        font-family: 'Courier New', monospace;
-      }
     }
 
-    .suggestions-footer {
-      padding: 0.75rem 1rem;
-      border-top: 1px solid #3e3e42;
-      background: #252526;
-      text-align: center;
-    }
+    .suggestion-item:hover { background: rgba(0,0,0,0.04); border-left-color: var(--vsc-border); }
+    .suggestion-item.selected { background: rgba(0,100,140,0.12); border-left-color: var(--vsc-accent); }
 
-    .suggestion-hint {
-      font-size: 0.75rem;
-      color: #858585;
+    .suggestion-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .suggestion-info { flex: 1; min-width: 0; }
 
-      kbd {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        background: #1e1e1e;
-        border: 1px solid #3e3e42;
-        border-radius: 3px;
-        font-family: 'Courier New', monospace;
-        font-size: 0.7rem;
-        color: #007acc;
-        margin: 0 0.25rem;
-        font-weight: 600;
-      }
-    }
+    .suggestion-path { font-size: 0.9rem; font-family: 'Courier New', monospace; color: var(--vsc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 0.15rem; }
+    .suggestion-path ::ng-deep mark { background: var(--vsc-accent); color: white; padding: 0.06rem 0.18rem; border-radius: 2px; font-weight: 600; }
+
+    .suggestion-meta { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
+
+    .suggestion-type { padding: 0.2rem 0.45rem; border-radius: 3px; text-transform: uppercase; font-weight: 700; font-size: 0.68rem; }
+    .suggestion-type.type-history { background: var(--vsc-success); color: white; }
+    .suggestion-type.type-directory { background: var(--vsc-accent); color: white; }
+    .suggestion-type.type-fuzzy { background: #ff9800; color: white; }
+
+    .suggestion-name { color: var(--vsc-muted); }
+    .suggestion-score { font-size: 0.8rem; color: var(--vsc-muted); font-weight: 600; font-family: 'Courier New', monospace; }
+
+    .suggestions-footer { padding: 0.5rem 0.75rem; border-top: 1px solid var(--vsc-border); background: var(--vsc-panel-background); text-align: center; }
+
+    .suggestion-hint { font-size: 0.75rem; color: var(--vsc-muted); }
+    .suggestion-hint kbd { display: inline-block; padding: 0.18rem 0.35rem; background: var(--vsc-panel-background); border: 1px solid var(--vsc-border); border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: var(--vsc-accent); margin: 0 0.2rem; font-weight: 600; }
   `]
 })
 export class AddressBarAutocompleteComponent implements OnInit, OnDestroy {

@@ -19,3 +19,81 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
+
+/* ==========================
+   VS Code-like Theme Tokens
+   ========================== */
+
+:root {
+  /* Colors - dark (default) */
+  --vsc-background: #1e1e1e;
+  --vsc-panel-background: #252526;
+  --vsc-border: #3e3e42;
+  --vsc-accent: #007acc;
+  --vsc-text: #d4d4d4;
+  --vsc-muted: #858585;
+  --vsc-success: #4caf50;
+
+  /* Spacing */
+  --vsc-gap-xs: 0.25rem;
+  --vsc-gap-sm: 0.5rem;
+  --vsc-gap-md: 0.75rem;
+  --vsc-gap-lg: 1rem;
+
+  /* Sizes */
+  --vsc-font-size: 0.9rem;
+  --vsc-compact-font-size: 0.85rem;
+  --vsc-radius: 4px;
+}
+
+/* Light theme overrides */
+.vscode-light {
+  --vsc-background: #ffffff;
+  --vsc-panel-background: #f3f3f3;
+  --vsc-border: #e1e1e1;
+  --vsc-accent: #0060a7;
+  --vsc-text: #242424;
+  --vsc-muted: #6b6b6b;
+  --vsc-success: #18873a;
+}
+
+/* Compact mode reduces padding and font-size for mouse-oriented dense layouts */
+.compact-mode {
+  --vsc-font-size: var(--vsc-compact-font-size);
+  --vsc-gap-xs: 0.125rem;
+  --vsc-gap-sm: 0.25rem;
+  --vsc-gap-md: 0.5rem;
+  --vsc-gap-lg: 0.75rem;
+}
+
+/* Compact-mode specific tweaks for controls */
+.compact-mode .btn,
+.compact-mode .btn-small,
+.compact-mode .btn-icon,
+.compact-mode .tool-btn {
+  padding: 0.15rem 0.4rem !important;
+  font-size: var(--vsc-compact-font-size) !important;
+}
+
+.compact-mode .toggle-switch {
+  width: 36px;
+  height: 20px;
+}
+
+.compact-mode .toggle-slider:before {
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.compact-mode .address-input-wrapper {
+  padding: calc(var(--vsc-gap-xs)) calc(var(--vsc-gap-sm));
+}
+
+/* Utility to apply tokens to body/panels */
+body {
+  background: var(--vsc-background);
+  color: var(--vsc-text);
+}
+

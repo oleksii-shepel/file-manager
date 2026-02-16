@@ -40,6 +40,12 @@
       <button (click)="toggleShowHidden()" [class.active]="showHidden" class="btn">
         {{ showHidden ? 'Hide' : 'Show' }} Hidden
       </button>
+      <button (click)="theme.toggleTheme()" class="btn" title="Toggle theme">
+        Theme
+      </button>
+      <button (click)="theme.toggleCompact()" [class.active]="(theme.getCompact$() | async)" class="btn" title="Toggle compact UI">
+        Compact
+      </button>
     </div>
   </div>
 

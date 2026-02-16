@@ -13,6 +13,7 @@ import { KeyboardService } from '../services/keyboard.service';
 import { ShortcutCallbacks, ShortcutRegistryService } from '../services/shortcut-registry.service';
 import { GlobalSearchComponent } from './global-search.component';
 import { PathHistoryService } from '../services/path-history.service';
+import { ThemeService } from '../services/theme.service';
 import { PathHistoryViewerComponent } from './path-history-viewer.component';
 import { AddressBarAutocompleteComponent } from './address-bar-autocomplete.component';
 interface BrowserPane {
@@ -64,8 +65,10 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     private workspaceService: WorkspaceService,
     private filterService: FilterService,
     private shortcutRegistry: ShortcutRegistryService,
-    private pathHistoryService: PathHistoryService
+    private pathHistoryService: PathHistoryService,
+    public theme: ThemeService
   ) {}
+
 
   ngOnInit(): void {
     // Subscribe to workspace changes
