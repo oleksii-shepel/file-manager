@@ -12,7 +12,7 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
  * - Fuzzy matching
  */
 @Component({
-  selector: 'app-address-bar-autocomplete',
+  selector: 'app-address-bar',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
@@ -363,7 +363,7 @@ import { PathHistoryService, PathSuggestion } from '../services/path-history.ser
     .suggestion-hint kbd { display: inline-block; padding: 0.18rem 0.35rem; background: var(--vsc-panel-background); border: 1px solid var(--vsc-border); border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: var(--vsc-accent); margin: 0 0.2rem; font-weight: 600; }
   `]
 })
-export class AddressBarAutocompleteComponent implements OnInit, OnDestroy {
+export class AddressBarComponent implements OnInit, OnDestroy {
   @ViewChild('addressInput') addressInput?: ElementRef<HTMLInputElement>;
 
   @Input() initialPath = '/';

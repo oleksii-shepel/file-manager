@@ -86,14 +86,14 @@
       </div>
 
       <!-- Address Bar -->
-      <app-address-bar-autocomplete
+      <app-address-bar
         [initialPath]="leftPane.currentPath"
         [paneId]="'left'"
         [placeholder]="'Enter path...'"
         (pathChange)="navigateFromAddressBar(leftPane, $event)"
         (navigateUp)="navigateToParent(leftPane)"
         (refresh)="refresh(leftPane)"
-      ></app-address-bar-autocomplete>
+      ></app-address-bar>
 
       <!-- Filter Bar -->
       <div class="filter-bar">
@@ -193,14 +193,14 @@
       </div>
 
       <!-- Address Bar -->
-      <app-address-bar-autocomplete
+      <app-address-bar
         [initialPath]="rightPane.currentPath"
         [paneId]="'right'"
         [placeholder]="'Enter path...'"
         (pathChange)="navigateFromAddressBar(rightPane, $event)"
         (navigateUp)="navigateToParent(rightPane)"
         (refresh)="refresh(rightPane)"
-      ></app-address-bar-autocomplete>
+      ></app-address-bar>
 
       <!-- Filter Bar -->
       <div class="filter-bar">

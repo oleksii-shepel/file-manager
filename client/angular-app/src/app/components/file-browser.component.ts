@@ -15,7 +15,7 @@ import { GlobalSearchComponent } from './global-search.component';
 import { PathHistoryService } from '../services/path-history.service';
 import { ThemeService } from '../services/theme.service';
 import { PathHistoryViewerComponent } from './path-history-viewer.component';
-import { AddressBarAutocompleteComponent } from './address-bar-autocomplete.component';
+import { AddressBarComponent } from './address-bar.component';
 interface BrowserPane {
   id: string;
   currentPath: string;
@@ -38,7 +38,7 @@ interface BrowserPane {
     KeyboardHelpComponent,
     GlobalSearchComponent,
     PathHistoryViewerComponent,
-    AddressBarAutocompleteComponent
+    AddressBarComponent
   ],
   templateUrl: './file-browser.component.html',
   styleUrls: ['./file-browser.component.scss']
