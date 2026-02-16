@@ -70,17 +70,15 @@
               class="tab-pin"
               (click)="toggleTabPin(leftPane, tab.id, $event)"
               title="Unpin tab"
-            >
-              📌
-            </button>
+              aria-label="Unpin tab"
+            ></button>
             <button 
               *ngIf="!tab.isPinned" 
               class="tab-close"
               (click)="closeTab(leftPane, tab.id); $event.stopPropagation()"
               title="Close tab"
-            >
-              ✕
-            </button>
+              aria-label="Close tab"
+            ></button>
           </div>
           <button class="tab-new" (click)="addTab(leftPane)" title="New tab">
             ➕
@@ -180,17 +178,15 @@
               class="tab-pin"
               (click)="toggleTabPin(rightPane, tab.id, $event)"
               title="Unpin tab"
-            >
-              📌
-            </button>
+              aria-label="Unpin tab"
+            ></button>
             <button 
               *ngIf="!tab.isPinned" 
               class="tab-close"
               (click)="closeTab(rightPane, tab.id); $event.stopPropagation()"
               title="Close tab"
-            >
-              ✕
-            </button>
+              aria-label="Close tab"
+            ></button>
           </div>
           <button class="tab-new" (click)="addTab(rightPane)" title="New tab">
             ➕
