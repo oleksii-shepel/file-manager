@@ -1,249 +1,184 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { TabInfo } from '@shared/protocol-enhanced';
+import { CommonModule } from "@angular/common";
+import { Component, EventEmitter, Input, Output } from "@angular/core";
+import { TabInfo } from "@shared/protocol-enhanced";
 
-/**
- * Tab Component
- * Displays a single tab in the tab bar
- */
 @Component({
   selector: 'app-tab',
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div 
-      class="tab"
-      [class.active]="isActive"
-      [class.pinned]="tab.isPinned"
-      (click)="onClick()"
-      [title]="tab.title">
+    <div class="tab"
+         [class.active]="isActive"
+         [class.pinned]="tab.isPinned"
+         (click)="onClick()"
+         (auxclick)="onMouseUp($event)"
+         (mouseenter)="isHovered = true"
+         (mouseleave)="isHovered = false">
       
       <span class="tab-icon">📁</span>
       <span class="tab-title">{{ tab.title }}</span>
+
+      <div class="tab-actions">
+        <!-- Dirty dot (modified) - only show when not hovered -->
+        <span *ngIf="!isHovered" class="dirty-dot" [class.active-dirty]="isActive"></span>
+        
+        <!-- Pinned indicator/button -->
+        <button *ngIf="tab.isPinned" class="tab-action pin" (click)="onPin($event)" 
+                [class.active-action]="isActive" title="Unpin tab">
+          <span class="pin-icon">📌</span>
+        </button>
+        
+        <!-- Close button -->
+        <button class="tab-action close" (click)="onClose($event)" 
+                [class.active-action]="isActive" title="Close (Ctrl+W)"></button>
+      </div>
       
-      <button 
-        *ngIf="tab.isPinned"
-        class="tab-pin"
-        (click)="onPin($event)"
-        title="Unpin tab">
-      </button>
-      
-      <button 
-        class="tab-close"
-        (click)="onClose($event)"
-        title="Close tab">
-      </button>
+      <!-- Active Tab Indicators -->
+      <div class="tab-border-top" *ngIf="isActive"></div>
+      <div class="tab-active-indicator"></div>
     </div>
   `,
-  styles: [`
-    .tab {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--vsc-padding-sm);
-      padding: 0 var(--vsc-padding-lg);
-      background: transparent;
-      border-right: 1px solid transparent;
-      cursor: pointer;
-      transition: all var(--vsc-transition-fast);
-      min-width: 120px;
-      max-width: 200px;
-      height: 35px;
-      position: relative;
-      color: var(--vsc-foreground-dim);
+styles: [`
+  .tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    height: 34px;
+    min-width: 120px;
+    max-width: 240px;
+    cursor: pointer;
 
-      &::after {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        width: 1px;
-        background: var(--vsc-border-subtle);
-        opacity: 0.5;
-      }
+    color: var(--vsc-foreground-dim);
+    background: transparent;
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.03);
-        color: var(--vsc-foreground);
+    border-radius: 8px 8px 0 0;
 
-        .tab-title {
-          color: var(--vsc-foreground);
-        }
-      }
+    transition:
+      background 140ms ease,
+      color 140ms ease,
+      box-shadow 160ms ease;
+  }
 
-      &.active {
-        background: var(--vsc-editor-background);
-        color: var(--vsc-foreground-bright);
-        
-        &::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 2px;
-          background: var(--vsc-accent-blue);
-          z-index: 1;
-        }
+  /* hover */
+  .tab:hover {
+    background: rgba(255,255,255,.06);
+    color: var(--vsc-foreground);
+  }
 
-        &::after {
-          opacity: 0;
-        }
+  /* active tab */
+  .tab.active {
+    background: var(--vsc-editor-background);
+    color: var(--vsc-foreground);
+    z-index: 2;
 
-        .tab-title {
-          color: var(--vsc-foreground-bright);
-          font-weight: 400;
-        }
+    box-shadow:
+      0 -1px 0 rgba(255,255,255,.06),
+      0 2px 6px rgba(0,0,0,.35);
+  }
 
-        .tab-icon {
-          opacity: 1;
-        }
-      }
+  /* icon */
+  .tab-icon {
+    font-size: 15px;
+    opacity: .75;
+    transform: translateY(.5px);
+  }
 
-      &.pinned {
-        min-width: 40px;
-        max-width: 40px;
-        padding: 0 var(--vsc-padding-sm);
-        
-        .tab-icon::after {
-          content: '';
-          position: absolute;
-          bottom: 2px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 4px;
-          height: 4px;
-          background: var(--vsc-accent-blue);
-          border-radius: 50%;
-        }
+  /* title */
+  .tab-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
 
-        .tab-title,
-        .tab-close {
-          width: 0;
-          overflow: hidden;
-          opacity: 0;
-          pointer-events: none;
-        }
-      }
+  /* buttons */
+  .tab-close,
+  .tab-pin {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--vsc-foreground-dim);
 
-      &.pinned.active {
-        .tab-icon::after {
-          background: var(--vsc-foreground-bright);
-        }
-      }
+    display:flex;
+    align-items:center;
+    justify-content:center;
 
-      .tab-icon {
-        font-size: 16px;
-        flex-shrink: 0;
-        line-height: 1;
-        opacity: 0.7;
-        position: relative;
-        transition: opacity var(--vsc-transition-fast);
-      }
+    opacity:0;
+    border-radius:4px;
+    transform: scale(.85);
 
-      .tab-title {
-        flex: 1;
-        font-size: var(--vsc-font-size);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        line-height: 1;
-        color: inherit;
-        transition: color var(--vsc-transition-fast);
-      }
+    transition: all 140ms ease;
+  }
 
-      .tab-pin,
-      .tab-close {
-        display: inline-flex;
-        width: 20px;
-        height: 20px;
-        padding: 0;
-        background: transparent;
-        border: none;
-        color: var(--vsc-foreground-dim);
-        cursor: pointer;
-        font-size: 16px;
-        opacity: 0;
-        transition: all var(--vsc-transition-fast);
-        border-radius: var(--vsc-border-radius-sm);
-        line-height: 1;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-        flex-shrink: 0;
+  .tab:hover .tab-close,
+  .tab:hover .tab-pin {
+    opacity:.75;
+    transform: scale(1);
+  }
 
-        &:hover {
-          background: rgba(255, 255, 255, 0.1);
-          color: var(--vsc-foreground);
-          opacity: 1 !important;
-        }
+  .tab-close:hover,
+  .tab-pin:hover {
+    opacity:1;
+    background: rgba(255,255,255,.12);
+  }
 
-        &:active {
-          background: rgba(255, 255, 255, 0.15);
-        }
-      }
+  /* icons */
+  .tab-close::before { content:"✕"; font-size:14px; }
+  .tab-pin::before { content:"📌"; font-size:11px; }
 
-      .tab-close {
-        &::before {
-          content: '✕';
-          font-size: 14px;
-          line-height: 1;
-        }
-      }
+  /* pinned */
+  .tab.pinned {
+    width:42px;
+    min-width:42px;
+    max-width:42px;
+    justify-content:center;
+    padding:0;
+  }
 
-      .tab-pin {
-        &::before {
-          content: '📌';
-          font-size: 11px;
-          line-height: 1;
-          filter: grayscale(1);
-          opacity: 0.7;
-        }
-      }
+  .tab.pinned .tab-title,
+  .tab.pinned .tab-close {
+    display:none;
+  }
 
-      &:hover .tab-pin,
-      &:hover .tab-close {
-        opacity: 0.7;
-      }
+  /* pinned dot */
+  .tab.pinned .tab-icon::after {
+    content:'';
+    position:absolute;
+    bottom:-2px;
+    left:50%;
+    transform:translateX(-50%);
+    width:4px;
+    height:4px;
+    border-radius:50%;
+    background: var(--vsc-accent-blue);
+  }
 
-      &.pinned .tab-pin {
-        display: inline-flex;
-        opacity: 0.5;
-
-        &::before {
-          filter: grayscale(0);
-          opacity: 1;
-        }
-      }
-
-      &.pinned:hover .tab-pin {
-        opacity: 1;
-      }
-    }
-
-    :host-context(.compact-mode) .tab {
-      height: 30px;
-      padding: 0 var(--vsc-padding-md);
-      min-width: 100px;
-      max-width: 160px;
-
-      &.pinned {
-        min-width: 36px;
-        max-width: 36px;
-      }
-    }
-  `]
+  /* compact */
+  :host-context(.compact-mode) .tab {
+    height:28px;
+    padding:0 10px;
+  }
+`]
 })
 export class TabComponent {
   @Input() tab!: TabInfo;
   @Input() isActive = false;
-  
+
   @Output() tabClick = new EventEmitter<TabInfo>();
   @Output() tabClose = new EventEmitter<TabInfo>();
   @Output() tabPin = new EventEmitter<TabInfo>();
 
-  onClick(): void {
-    this.tabClick.emit(this.tab);
+  isHovered = false;
+
+  onClick(): void { this.tabClick.emit(this.tab); }
+
+  onMouseUp(event: MouseEvent): void {
+    if (event.button === 1) { // Middle click to close
+      this.onClose(event);
+    }
   }
 
   onClose(event: Event): void {

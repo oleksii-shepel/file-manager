@@ -1,140 +1,146 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TabComponent } from '../tab/tab.component';
+import { TabComponent } from './tab.component';
 import { TabInfo } from '@shared/protocol-enhanced';
 
-/**
- * Tab Bar Component
- * Container for tabs with new tab button
- */
 @Component({
   selector: 'app-tab-bar',
   standalone: true,
   imports: [CommonModule, TabComponent],
   template: `
-    <div class="tab-bar">
-      <div class="tabs">
-        <app-tab
-          *ngFor="let tab of tabs"
-          [tab]="tab"
-          [isActive]="tab.id === activeTabId"
-          (tabClick)="onTabClick($event)"
-          (tabClose)="onTabClose($event)"
-          (tabPin)="onTabPin($event)">
-        </app-tab>
-        
-        <button class="tab-new" (click)="onNewTab()" title="New tab">
-        </button>
+    <div class="tab-bar-container" [class.compact]="isCompact">
+      <div class="tabs-scroll-viewport">
+        <div class="tabs-list">
+          <app-tab *ngFor="let tab of tabs; trackBy: trackByTabId"
+                   [tab]="tab"
+                   [isActive]="tab.id === activeTabId"
+                   (tabClick)="onTabClick($event)"
+                   (tabClose)="onTabClose($event)"
+                   (tabPin)="onTabPin($event)">
+          </app-tab>
+        </div>
+      </div>
+      
+      <div class="tab-bar-actions">
+        <button class="action-btn new-tab" (click)="onNewTab()" title="New Tab (Ctrl+N)"></button>
       </div>
     </div>
   `,
   styles: [`
-    .tab-bar {
+    :host {
+      display: block;
+      /* Lighter/darker container background to contrast with active tab */
+      background: var(--vsc-tab-container-bg, #252526);
+      border-bottom: 1px solid var(--vsc-border-subtle, #3c3c3c);
+      overflow: hidden;
+    }
+
+    .tab-bar-container {
       display: flex;
-      background: var(--vsc-editor-background);
-      border-bottom: 1px solid var(--vsc-border);
-      min-height: 35px;
+      height: 35px;
+      background: inherit;
+    }
+
+    /* Make container slightly different from inactive tabs */
+    :host-context(.vscode-dark) .tab-bar-container {
+      background: #2a2a2a; /* Slightly different from inactive tab (2d2d2d) */
+    }
+
+    :host-context(.vscode-light) .tab-bar-container {
+      background: #e8e8e8; /* Slightly different from inactive tab (e0e0e0) */
+    }
+
+    /* Scrollable Viewport */
+    .tabs-scroll-viewport {
+      flex: 1;
+      display: flex;
       overflow-x: auto;
       overflow-y: hidden;
+      scrollbar-width: none;
       position: relative;
-      z-index: 10;
-      flex-shrink: 0;
-
-      &::-webkit-scrollbar {
-        height: 3px;
-      }
-
-      &::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      &::-webkit-scrollbar-thumb {
-        background: var(--vsc-scrollbar-thumb);
-        border-radius: 2px;
-
-        &:hover {
-          background: var(--vsc-scrollbar-thumb-hover);
-        }
-      }
     }
 
-    .tabs {
+    .tabs-scroll-viewport::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Tabs List */
+    .tabs-list {
       display: flex;
-      flex: 1;
-      min-width: 0;
-      height: 100%;
       align-items: stretch;
+      min-width: 0;
     }
 
-    .tab-new {
-      display: inline-flex;
+    /* Fade Effect for Overflow */
+    .tabs-scroll-viewport::after {
+      content: '';
+      position: sticky;
+      right: 0;
+      top: 0;
+      width: 20px;
+      height: 100%;
+      background: linear-gradient(to right, transparent, var(--vsc-tab-container-bg, #252526));
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Action Buttons (Right side) */
+    .tab-bar-actions {
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      background: var(--vsc-tab-container-bg, #252526);
+      border-left: 1px solid var(--vsc-border-subtle, #3c3c3c);
+      z-index: 10;
+    }
+
+    .action-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
       align-items: center;
       justify-content: center;
-      width: 35px;
-      min-width: 35px;
-      max-width: 35px;
-      padding: 0;
-      background: transparent;
       border: none;
+      background: transparent;
       color: var(--vsc-foreground-dim);
+      border-radius: 3px;
       cursor: pointer;
-      font-size: 16px;
-      transition: all var(--vsc-transition-fast);
-      opacity: 0.5;
-      height: 35px;
-
-      &::before {
-        content: '+';
-        font-size: 18px;
-        line-height: 1;
-        font-weight: 300;
-      }
-
-      &:hover {
-        opacity: 1;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--vsc-foreground);
-      }
-
-      &:active {
-        background: rgba(255, 255, 255, 0.1);
-      }
+      transition: background 0.1s, color 0.1s;
     }
 
-    :host-context(.compact-mode) .tab-bar {
-      min-height: 30px;
+    .action-btn:hover {
+      background: var(--vsc-list-hover-background, #2a2d2e);
+      color: var(--vsc-foreground);
     }
 
-    :host-context(.compact-mode) .tab-new {
-      height: 30px;
-      width: 30px;
-      min-width: 30px;
-      max-width: 30px;
+    .new-tab::before {
+      content: '+';
+      font-size: 18px;
+      font-weight: 300;
     }
+
+    /* Compact Mode */
+    .compact .tab-bar-container { height: 28px; }
+    .compact .action-btn { width: 24px; height: 24px; }
+    .compact .action-btn::before { font-size: 16px; }
   `]
 })
 export class TabBarComponent {
   @Input() tabs: TabInfo[] = [];
   @Input() activeTabId = '';
-  
+  @Input() isCompact = false;
+
   @Output() tabChange = new EventEmitter<TabInfo>();
   @Output() tabClose = new EventEmitter<TabInfo>();
   @Output() tabPin = new EventEmitter<TabInfo>();
   @Output() newTab = new EventEmitter<void>();
 
-  onTabClick(tab: TabInfo): void {
-    this.tabChange.emit(tab);
+  trackByTabId(index: number, tab: TabInfo): string {
+    return tab.id;
   }
 
-  onTabClose(tab: TabInfo): void {
-    this.tabClose.emit(tab);
-  }
-
-  onTabPin(tab: TabInfo): void {
-    this.tabPin.emit(tab);
-  }
-
-  onNewTab(): void {
-    this.newTab.emit();
-  }
+  onTabClick(tab: TabInfo) { this.tabChange.emit(tab); }
+  onTabClose(tab: TabInfo) { this.tabClose.emit(tab); }
+  onTabPin(tab: TabInfo) { this.tabPin.emit(tab); }
+  onNewTab() { this.newTab.emit(); }
 }
