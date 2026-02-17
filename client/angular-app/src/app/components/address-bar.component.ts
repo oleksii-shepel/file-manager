@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ViewChild, ElementRef, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ViewChild, ElementRef, HostListener, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
@@ -407,6 +407,16 @@ export class AddressBarComponent implements OnInit, OnDestroy {
       });
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialPath'] && !changes['initialPath'].firstChange) {
+      const newPath = this.normalizePath(changes['initialPath'].currentValue);
+      // Only update if the user isn't currently typing in the bar
+      if (!this.isFocused) {
+        this.currentPath = newPath;
+      }
+    }
+  }
+
   ngOnDestroy(): void {
     if (this.blurTimeout) {
       clearTimeout(this.blurTimeout);
@@ -725,17 +735,7 @@ export class AddressBarComponent implements OnInit, OnDestroy {
    * Handle navigate up button click
    */
   onNavigateUpClick(): void {
-    // Calculate parent path
-    const parentPath = this.getParentPath(this.currentPath || this.initialPath);
-
-    // Emit event for parent to handle
     this.navigateUpClicked.emit();
-
-    // Also update current path and navigate
-    if (parentPath !== this.currentPath) {
-      this.currentPath = this.normalizePath(parentPath);
-      this.navigateToPath();
-    }
   }
 
   /**

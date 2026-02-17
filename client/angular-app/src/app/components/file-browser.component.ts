@@ -185,15 +185,15 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   }
 
   closeTab(pane: BrowserPane, tabId: string): void {
-    const tabs = this.getTabs(pane.id);
-    if (tabs.length <= 1) {
-      alert('Cannot close the last tab');
+    const success = this.workspaceService.closeTab(pane.id, tabId);
+
+    if (!success) {
+      // If the service refused to close, notify the user
+      alert('Failed to close tab');
       return;
     }
 
-    this.workspaceService.closeTab(pane.id, tabId);
-    
-    // Load the new active tab
+    // Load the new active tab (service may have replaced the last tab)
     const activeTab = this.workspaceService.getActiveTab(pane.id);
     if (activeTab) {
       pane.currentTabId = activeTab.id;

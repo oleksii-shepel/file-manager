@@ -15,7 +15,8 @@ import { TabInfo } from '@shared/protocol-enhanced';
       class="tab"
       [class.active]="isActive"
       [class.pinned]="tab.isPinned"
-      (click)="onClick()">
+      (click)="onClick()"
+      [title]="tab.title">
       
       <span class="tab-icon">📁</span>
       <span class="tab-title">{{ tab.title }}</span>

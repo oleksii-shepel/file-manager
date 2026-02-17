@@ -273,8 +273,28 @@ export class WorkspaceService {
     const pane = paneId === 'left' ? workspace.leftPane : workspace.rightPane;
     const tabIndex = pane.tabs.findIndex(t => t.id === tabId);
 
-    if (tabIndex === -1 || pane.tabs.length <= 1) {
-      return false; // Can't close last tab
+    if (tabIndex === -1) {
+      return false;
+    }
+
+    // If this is the only tab, replace it with the root of the selected disk
+    if (pane.tabs.length === 1) {
+      const closedTab = pane.tabs[tabIndex];
+      const rootPath = this.getRootForPath(closedTab.path || this.getHomePath());
+
+      const newTab: TabInfo = {
+        id: this.generateId(),
+        title: this.getPathTitle(rootPath),
+        path: rootPath,
+        isActive: true,
+        isPinned: false,
+        createdAt: Date.now(),
+      };
+
+      pane.tabs[tabIndex] = newTab;
+      pane.activeTabId = newTab.id;
+      this.updateWorkspace(workspace.id, { [paneId === 'left' ? 'leftPane' : 'rightPane']: pane });
+      return true;
     }
 
     const wasActive = pane.tabs[tabIndex].isActive;
@@ -389,11 +409,47 @@ export class WorkspaceService {
   }
 
   private getPathTitle(path: string): string {
-    if (path === '/' || path === '') {
-      return 'Root';
+    const normalized = this.normalizePath(path);
+
+    // Show full normalized path in tab title; keep root as '/'
+    if (normalized === '/' || normalized === '') {
+      return '/';
     }
-    
-    const parts = path.split('/').filter(p => p.length > 0);
-    return parts.length > 0 ? parts[parts.length - 1] : 'Root';
+
+    return normalized;
+  }
+
+  /**
+   * Normalize a path string: convert backslashes, collapse slashes, remove trailing slash
+   */
+  private normalizePath(path: string): string {
+    if (!path) return '/';
+
+    let normalized = path.replace(/\\/g, '/');
+    normalized = normalized.replace(/\/+/g, '/');
+
+    if (normalized === '') return '/';
+
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Derive the root path for a given path. On Windows returns 'C:/', otherwise '/'.
+   */
+  private getRootForPath(path: string): string {
+    const normalized = this.normalizePath(path || '');
+
+    // Windows drive letter (e.g. C:/ or C:\)
+    const driveMatch = normalized.match(/^([a-zA-Z]):/);
+    if (driveMatch) {
+      return `${driveMatch[1]}:/`;
+    }
+
+    // For POSIX-like paths default to '/'
+    return '/';
   }
 }

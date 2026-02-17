@@ -62,6 +62,7 @@
             [class.active]="tab.isActive"
             [class.pinned]="tab.isPinned"
             (click)="switchTab(leftPane, tab.id)"
+            [title]="tab.title"
           >
             <span class="tab-icon">📁</span>
             <span class="tab-title">{{ tab.title }}</span>
@@ -169,6 +170,7 @@
             [class.active]="tab.isActive"
             [class.pinned]="tab.isPinned"
             (click)="switchTab(rightPane, tab.id)"
+            [title]="tab.title"
           >
             <span class="tab-icon">📁</span>
             <span class="tab-title">{{ tab.title }}</span>
