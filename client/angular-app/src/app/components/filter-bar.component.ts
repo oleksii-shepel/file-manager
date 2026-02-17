@@ -178,7 +178,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
         <div class="fb-tag" *ngFor="let p of activePresets" [title]="'Remove: ' + p.name">
           <span class="fb-tag-icon">{{ p.icon || getDefaultIcon(p) }}</span>
           <span class="fb-tag-name">{{ p.name }}</span>
-          <span class="fb-tag-count" *ngIf="p.count !== undefined">({{ p.count }})</span>
           <button class="fb-tag-rm" (click)="togglePreset(p)" aria-label="Remove filter">
             <svg width="8" height="8" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
@@ -223,7 +222,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       display: flex;
       align-items: center;
       gap: 4px;
-      height: 35px;
+      height: 32px;
       padding: 0 8px;
       background: var(--vsc-sidebar-background, #252526);
       border-bottom: 1px solid var(--vsc-border, #3c3c3c);
@@ -231,7 +230,13 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       overflow: hidden;
     }
 
-    .filter-bar--compact { height: 28px; padding: 0 6px; }
+    .filter-bar--compact {
+      .fb-trigger  { height: 20px; font-size: 11.5px; }
+      .fb-chip     { height: 18px; }
+      .fb-tag      { height: 18px; font-size: 11px; }
+      .fb-item     { height: 22px; }
+      .fb-mode-row { height: 26px; }
+    }
 
     /* ── Anchor ──────────────────────────────────────────── */
     .fb-anchor { position: relative; flex-shrink: 0; }
@@ -571,7 +576,7 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   @Input() filteredCount = 0;
   @Input() dataset: FileInfo[] = [];
   @Input() showChips     = true;
-  @Input() compact       = false;
+  @Input() compact       = true;
   @Input() menuWidth     = 250;
 
   // Configuration for content-aware generation
@@ -712,131 +717,129 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   generateDynamicPresets(): void {
-    if (!this.enableDynamicPresets || this.dataset.length === 0) {
-      this.dynamicPresets = [];
-      return;
-    }
+  if (!this.enableDynamicPresets || this.dataset.length === 0) {
+    this.dynamicPresets = [];
+    return;
+  }
 
-    const analysis = this.analyzeContent();
-    const newPresets: FilterPreset[] = [];
+  const analysis = this.analyzeContent();
+  const newPresets: FilterPreset[] = [];
 
-    // 1. Popular Extensions (Top N by count)
-    const sortedExts = Array.from(analysis.extensions.entries())
-      .filter(([, count]) => count >= this.minGroupSize)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, this.maxExtensions);
+  // 1. Popular Extensions (Top N by count)
+  const sortedExts = Array.from(analysis.extensions.entries())
+    .filter(([, count]) => count >= this.minGroupSize)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, this.maxExtensions);
 
-    const extIcons: Record<string, string> = {
-      js: '⚡', ts: '🔷', json: '📋', md: '📝', txt: '📄',
-      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🎨',
-      pdf: '📕', doc: '📘', docx: '📘', xls: '📊', xlsx: '📊',
-      zip: '📦', tar: '📦', gz: '📦', rar: '📦',
-      mp3: '🎵', mp4: '🎬', wav: '🎵', mov: '🎬',
-      html: '🌐', css: '🎨', scss: '🎨', sass: '🎨',
-      py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️', h: '📋',
-      go: '🔹', rs: '⚙️', rb: '💎', php: '🐘',
-      yaml: '⚙️', yml: '⚙️', xml: '📋', sql: '🗄️',
-      sh: '⌨️', bash: '⌨️', zsh: '⌨️', ps1: '⌨️',
-      dockerfile: '🐳', gitignore: '🔒', env: '🔧', config: '⚙️'
-    };
+  const extIcons: Record<string, string> = {
+    js: '⚡', ts: '🔷', json: '📋', md: '📝', txt: '📄',
+    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🎨',
+    pdf: '📕', doc: '📘', docx: '📘', xls: '📊', xlsx: '📊',
+    zip: '📦', tar: '📦', gz: '📦', rar: '📦',
+    mp3: '🎵', mp4: '🎬', wav: '🎵', mov: '🎬',
+    html: '🌐', css: '🎨', scss: '🎨', sass: '🎨',
+    py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️', h: '📋',
+    go: '🔹', rs: '⚙️', rb: '💎', php: '🐘',
+    yaml: '⚙️', yml: '⚙️', xml: '📋', sql: '🗄️',
+    sh: '⌨️', bash: '⌨️', zsh: '⌨️', ps1: '⌨️',
+    dockerfile: '🐳', gitignore: '🔒', env: '🔧', config: '⚙️'
+  };
 
-    for (const [ext, count] of sortedExts) {
-      newPresets.push({
-        id: `dyn-ext-${ext}`,
-        name: `.${ext.toUpperCase()} Files`,
-        filter: `ext:${ext}`,
-        icon: extIcons[ext] || '📄',
-        group: 'Extensions',
-        isDynamic: true,
-        count,
-        description: `${count} files with .${ext} extension`
-      });
-    }
+  for (const [ext, count] of sortedExts) {
+    newPresets.push({
+      id: `dyn-ext-${ext}`,
+      name: `.${ext.toUpperCase()} Files`, // Removed count from name
+      filter: `ext:${ext}`,
+      icon: extIcons[ext] || '📄',
+      group: 'Extensions',
+      isDynamic: true,
+      count, // Keep count for the badge
+      description: `${count} files with .${ext} extension`
+    });
+  }
 
-    // 2. Date-based filters
-    if (analysis.dateRanges.today >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-today',
-        name: 'Modified Today',
-        filter: 'modified:today',
-        icon: '⚡',
-        group: 'Date',
-        isDynamic: true,
-        count: analysis.dateRanges.today,
-        description: 'Files modified today'
-      });
-    }
+  // 2. Date-based filters
+  if (analysis.dateRanges.today >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-today',
+      name: 'Modified Today', // Removed count from name
+      filter: 'modified:today',
+      icon: '⚡',
+      group: 'Date',
+      isDynamic: true,
+      count: analysis.dateRanges.today,
+      description: `${analysis.dateRanges.today} files modified today`
+    });
+  }
 
-    if (analysis.dateRanges.thisWeek >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-this-week',
-        name: 'This Week',
-        filter: 'modified:thisweek',
-        icon: '📅',
-        group: 'Date',
-        isDynamic: true,
-        count: analysis.dateRanges.thisWeek,
-        description: 'Files modified in the last 7 days'
-      });
-    }
+  if (analysis.dateRanges.thisWeek >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-this-week',
+      name: 'This Week', // Removed count from name
+      filter: 'modified:thisweek',
+      icon: '📅',
+      group: 'Date',
+      isDynamic: true,
+      count: analysis.dateRanges.thisWeek,
+      description: `${analysis.dateRanges.thisWeek} files modified in the last 7 days`
+    });
+  }
 
-    if (analysis.dateRanges.thisMonth >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-this-month',
-        name: 'This Month',
-        filter: 'modified:thismonth',
-        icon: '📆',
-        group: 'Date',
-        isDynamic: true,
-        count: analysis.dateRanges.thisMonth,
-        description: 'Files modified in the last 30 days'
-      });
-    }
+  if (analysis.dateRanges.thisMonth >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-this-month',
+      name: 'This Month', // Removed count from name
+      filter: 'modified:thismonth',
+      icon: '📆',
+      group: 'Date',
+      isDynamic: true,
+      count: analysis.dateRanges.thisMonth,
+      description: `${analysis.dateRanges.thisMonth} files modified in the last 30 days`
+    });
+  }
 
-    // 3. Size-based filters
-    if (analysis.sizeTiers.large >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-large',
-        name: 'Large Files (10-100MB)',
-        filter: 'size:10mb..100mb',
-        icon: '📦',
-        group: 'Size',
-        isDynamic: true,
-        count: analysis.sizeTiers.large,
-        description: 'Files between 10MB and 100MB'
-      });
-    }
+  // 3. Size-based filters
+  if (analysis.sizeTiers.large >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-large',
+      name: 'Large Files (10-100MB)', // Removed count from name
+      filter: 'size:10mb..100mb',
+      icon: '📦',
+      group: 'Size',
+      isDynamic: true,
+      count: analysis.sizeTiers.large,
+      description: `${analysis.sizeTiers.large} files between 10MB and 100MB`
+    });
+  }
 
-    if (analysis.sizeTiers.huge >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-huge',
-        name: 'Huge Files (>100MB)',
-        filter: 'size:>100mb',
-        icon: '🐋',
-        group: 'Size',
-        isDynamic: true,
-        count: analysis.sizeTiers.huge,
-        description: 'Files larger than 100MB'
-      });
-    }
+  if (analysis.sizeTiers.huge >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-huge',
+      name: 'Huge Files (>100MB)', // Removed count from name
+      filter: 'size:>100mb',
+      icon: '🐋',
+      group: 'Size',
+      isDynamic: true,
+      count: analysis.sizeTiers.huge,
+      description: `${analysis.sizeTiers.huge} files larger than 100MB`
+    });
+  }
 
-    // 4. Special filters
-    if (analysis.hidden >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-hidden',
-        name: 'Hidden Files',
-        filter: 'hidden:true',
-        icon: '👻',
-        group: 'Special',
-        isDynamic: true,
-        count: analysis.hidden,
-        description: 'Hidden files and directories'
-      });
-    }
+  // 4. Special filters
+  if (analysis.hidden >= this.minGroupSize) {
+    newPresets.push({
+      id: 'dyn-hidden',
+      name: 'Hidden Files', // Removed count from name
+      filter: 'hidden:true',
+      icon: '👻',
+      group: 'Special',
+      isDynamic: true,
+      count: analysis.hidden,
+      description: `${analysis.hidden} hidden files and directories`
+    });
+  }
 
-    // REMOVED: Dynamic folders preset - we use the static one instead
-
-    this.dynamicPresets = newPresets;
+  this.dynamicPresets = newPresets;
   }
 
   regenerateDynamicPresets(): void {
