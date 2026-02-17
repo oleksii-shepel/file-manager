@@ -97,26 +97,13 @@
       ></app-address-bar>
 
       <!-- Filter Bar -->
-      <div class="filter-bar">
-        <input 
-          type="text"
-          [(ngModel)]="leftPane.filterText"
-          (ngModelChange)="onFilterChange(leftPane)"
-          class="filter-input"
-          placeholder="Filter: name, ext:pdf, type:dir, size>1mb..."
-        />
-        <button 
-          *ngIf="leftPane.filterText"
-          (click)="clearFilter(leftPane)" 
-          class="btn-icon"
-          title="Clear filter"
-        >
-          ✕
-        </button>
-        <span class="filter-count" *ngIf="leftPane.filterText">
-          {{ leftPane.filteredEntries.length }} / {{ leftPane.entries.length }}
-        </span>
-      </div>
+      <app-filter-bar
+        [filteredCount]="leftPane.filteredEntries.length"
+        [totalCount]="leftPane.entries.length"
+        [compact]="false"
+        (filterChange)="onPresetFilterChange(leftPane, $event)"
+        (filterClear)="onPresetFilterClear(leftPane)"
+      ></app-filter-bar>
 
       <!-- Action Bar -->
       <div class="action-bar">
@@ -205,26 +192,13 @@
       ></app-address-bar>
 
       <!-- Filter Bar -->
-      <div class="filter-bar">
-        <input 
-          type="text"
-          [(ngModel)]="rightPane.filterText"
-          (ngModelChange)="onFilterChange(rightPane)"
-          class="filter-input"
-          placeholder="Filter: name, ext:pdf, type:dir, size>1mb..."
-        />
-        <button 
-          *ngIf="rightPane.filterText"
-          (click)="clearFilter(rightPane)" 
-          class="btn-icon"
-          title="Clear filter"
-        >
-          ✕
-        </button>
-        <span class="filter-count" *ngIf="rightPane.filterText">
-          {{ rightPane.filteredEntries.length }} / {{ rightPane.entries.length }}
-        </span>
-      </div>
+      <app-filter-bar
+        [filteredCount]="rightPane.filteredEntries.length"
+        [totalCount]="rightPane.entries.length"
+        [compact]="false"
+        (filterChange)="onPresetFilterChange(rightPane, $event)"
+        (filterClear)="onPresetFilterClear(rightPane)"
+      ></app-filter-bar>
 
       <!-- Action Bar -->
       <div class="action-bar">
