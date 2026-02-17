@@ -100,6 +100,7 @@
       <app-filter-bar
         [filteredCount]="leftPane.filteredEntries.length"
         [totalCount]="leftPane.entries.length"
+        [dataset]="leftPane.entries"
         [compact]="false"
         (filterChange)="onPresetFilterChange(leftPane, $event)"
         (filterClear)="onPresetFilterClear(leftPane)"
@@ -195,6 +196,7 @@
       <app-filter-bar
         [filteredCount]="rightPane.filteredEntries.length"
         [totalCount]="rightPane.entries.length"
+        [dataset]="rightPane.entries"
         [compact]="false"
         (filterChange)="onPresetFilterChange(rightPane, $event)"
         (filterClear)="onPresetFilterClear(rightPane)"

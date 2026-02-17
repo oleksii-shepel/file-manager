@@ -1,7 +1,8 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ViewChild, ElementRef, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ViewChild, ElementRef, HostListener, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, takeUntil } from 'rxjs';
+import { FileInfo, FileType } from '@shared/protocol';
 
 export interface FilterPreset {
   id: string;
@@ -10,6 +11,8 @@ export interface FilterPreset {
   icon?: string;
   description?: string;
   group?: string;
+  isDynamic?: boolean; // Flag to identify auto-generated presets
+  count?: number;      // Number of matching files
 }
 
 export interface FilterGroup {
@@ -21,6 +24,16 @@ export interface FilterGroup {
 export interface ActiveFilterState {
   presets: FilterPreset[];   // all selected presets in selection order
   combined: string;          // joined filter string ready for consumption
+}
+
+// Content analysis result for generating dynamic presets
+interface ContentAnalysis {
+  extensions: Map<string, number>;
+  dateRanges: { today: number; thisWeek: number; thisMonth: number; older: number };
+  sizeTiers: { small: number; medium: number; large: number; huge: number };
+  types: { files: number; directories: number };
+  hidden: number;
+  permissions: Map<string, number>;
 }
 
 @Component({
@@ -52,7 +65,7 @@ export interface ActiveFilterState {
           </svg>
         </button>
 
-        <!-- ── Dropdown — position:fixed, coords from getBoundingClientRect ── -->
+        <!-- ── Dropdown ───────────────────────────────────── -->
         <div class="fb-menu" #menuEl *ngIf="isOpen"
           [style.top.px]="dropPos.top"
           [style.left.px]="dropPos.left"
@@ -71,6 +84,11 @@ export interface ActiveFilterState {
             </div>
           </div>
 
+          <!-- Dynamic content-aware indicator -->
+          <div class="fb-dynamic-hint" *ngIf="hasDynamicPresets">
+            <span>📊 Auto-generated from content</span>
+          </div>
+
           <!-- Groups + items -->
           <div class="fb-menu-body" #menuContent>
             <ng-container *ngFor="let group of groupedPresets; let gi = index">
@@ -83,6 +101,7 @@ export interface ActiveFilterState {
                 class="fb-item"
                 [class.fb-item--checked]="isSelected(preset)"
                 [class.fb-item--focused]="focusedIdx === getItemIdx(gi, pi)"
+                [class.fb-item--dynamic]="preset.isDynamic"
                 (mouseenter)="focusedIdx = getItemIdx(gi, pi)"
                 (click)="togglePreset(preset)"
                 role="menuitemcheckbox"
@@ -95,6 +114,7 @@ export interface ActiveFilterState {
                 </span>
                 <span class="fb-item-icon">{{ preset.icon || getDefaultIcon(preset) }}</span>
                 <span class="fb-item-name">{{ preset.name }}</span>
+                <span class="fb-item-count" *ngIf="preset.count !== undefined">{{ preset.count }}</span>
                 <span class="fb-order-badge" *ngIf="isSelected(preset) && activePresets.length > 1">
                   {{ getSelectionOrder(preset) }}
                 </span>
@@ -107,6 +127,10 @@ export interface ActiveFilterState {
             <button class="fb-clear-btn" *ngIf="hasActive" (click)="clearAll()">
               <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
               Clear all
+            </button>
+            <button class="fb-refresh-btn" *ngIf="hasDynamicPresets" (click)="regenerateDynamicPresets()" title="Refresh content analysis">
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+              Refresh
             </button>
             <span class="fb-foot-hint" [class.fb-foot-hint--right]="hasActive">
               <kbd>Space</kbd> toggle &nbsp;<kbd>Esc</kbd> close
@@ -122,6 +146,7 @@ export interface ActiveFilterState {
         <div class="fb-tag" *ngFor="let p of activePresets" [title]="'Remove: ' + p.name">
           <span class="fb-tag-icon">{{ p.icon || getDefaultIcon(p) }}</span>
           <span class="fb-tag-name">{{ p.name }}</span>
+          <span class="fb-tag-count" *ngIf="p.count !== undefined">({{ p.count }})</span>
           <button class="fb-tag-rm" (click)="togglePreset(p)" aria-label="Remove filter">
             <svg width="8" height="8" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
@@ -139,6 +164,7 @@ export interface ActiveFilterState {
           (click)="togglePreset(p)" [title]="p.description || p.name">
           <span>{{ p.icon || getDefaultIcon(p) }}</span>
           <span>{{ p.name }}</span>
+          <span class="fb-chip-count" *ngIf="p.count !== undefined">{{ p.count }}</span>
         </button>
       </div>
 
@@ -151,8 +177,7 @@ export interface ActiveFilterState {
   `,
   styles: [`
     /* ══════════════════════════════════════════════════════
-       FILTER BAR — Multi-filter combination
-       VS Code design language: dense, functional, zero fluff
+       FILTER BAR — Multi-filter combination with content-aware categories
     ══════════════════════════════════════════════════════ */
 
     :host {
@@ -210,8 +235,8 @@ export interface ActiveFilterState {
 
     /* ── Dropdown ────────────────────────────────────────── */
     .fb-menu {
-      position: fixed; /* escapes every overflow:hidden ancestor */
-      min-width: 250px; max-width: 310px;
+      position: fixed;
+      min-width: 250px; max-width: 340px;
       background: var(--vsc-panel-background, #252526);
       border: 1px solid var(--vsc-border, #3c3c3c);
       border-radius: 4px;
@@ -223,6 +248,15 @@ export interface ActiveFilterState {
     @keyframes fb-in {
       from { opacity: 0; transform: translateY(-3px); }
       to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Dynamic hint ─────────────────────────────────────── */
+    .fb-dynamic-hint {
+      display: flex; align-items: center; justify-content: center;
+      height: 22px; padding: 0 10px;
+      background: color-mix(in srgb, #2d7d46 15%, transparent);
+      border-bottom: 1px solid var(--vsc-border, #3c3c3c);
+      font-size: 10.5px; color: #7ee787; letter-spacing: 0.3px;
     }
 
     /* ── AND/OR toggle row ───────────────────────────────── */
@@ -259,6 +293,8 @@ export interface ActiveFilterState {
     /* ── Menu body ───────────────────────────────────────── */
     .fb-menu-body {
       padding: 3px 0;
+      max-height: 400px;
+      overflow-y: auto;
     }
 
     /* ── Group header ────────────────────────────────────── */
@@ -290,6 +326,11 @@ export interface ActiveFilterState {
         border-left-color: #007fd4;
         &:hover, &.fb-item--focused { background: color-mix(in srgb, #094771 24%, transparent); }
       }
+
+      &.fb-item--dynamic {
+        border-left-color: color-mix(in srgb, #2d7d46 30%, transparent);
+        &.fb-item--checked { border-left-color: #2d7d46; }
+      }
     }
 
     /* Checkbox */
@@ -310,6 +351,14 @@ export interface ActiveFilterState {
       flex: 1; font-size: 13px;
       color: var(--vsc-foreground, #cccccc);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .fb-item-count {
+      flex-shrink: 0;
+      font-size: 10px; font-weight: 600;
+      color: var(--vsc-foreground-dim, #858585);
+      background: var(--vsc-badge-background, #4d4d4d);
+      padding: 1px 5px; border-radius: 8px; min-width: 18px; text-align: center;
     }
 
     /* Selection-order number badge */
@@ -343,14 +392,23 @@ export interface ActiveFilterState {
       }
     }
 
-    .fb-clear-btn {
+    .fb-clear-btn, .fb-refresh-btn {
       display: inline-flex; align-items: center; gap: 4px;
       height: 18px; padding: 0 7px;
       background: transparent; border: 1px solid var(--vsc-border, #3c3c3c);
       border-radius: 2px; cursor: pointer;
-      color: var(--vsc-error, #f14c4c); font-size: 11px; font-family: inherit;
+      font-size: 11px; font-family: inherit;
       transition: background 0.1s, border-color 0.1s;
+    }
+
+    .fb-clear-btn {
+      color: var(--vsc-error, #f14c4c);
       &:hover { background: color-mix(in srgb, var(--vsc-error, #f14c4c) 12%, transparent); border-color: var(--vsc-error, #f14c4c); }
+    }
+
+    .fb-refresh-btn {
+      color: var(--vsc-foreground-dim, #858585); margin-left: 6px;
+      &:hover { background: var(--vsc-list-hover-background, #2a2d2e); border-color: var(--vsc-border-bright, #5a5a5a); color: var(--vsc-foreground, #ccc); }
     }
 
     /* ── Active tags strip ───────────────────────────────── */
@@ -391,6 +449,7 @@ export interface ActiveFilterState {
 
     .fb-tag-icon { font-size: 11px; line-height: 1; }
     .fb-tag-name { white-space: nowrap; line-height: 1; }
+    .fb-tag-count { font-size: 10px; opacity: 0.7; margin-left: 2px; }
 
     .fb-tag-rm {
       display: flex; align-items: center; justify-content: center;
@@ -427,6 +486,8 @@ export interface ActiveFilterState {
       &.fb-chip--on { background: #094771; border-color: transparent; color: #ccddff; }
     }
 
+    .fb-chip-count { font-size: 9.5px; opacity: 0.8; margin-left: 2px; }
+
     /* ── Count indicator ─────────────────────────────────── */
     .fb-count {
       flex-shrink: 0; margin-left: auto;
@@ -454,41 +515,43 @@ export interface ActiveFilterState {
       .fb-checkbox--on  { background: #0060c0 !important; border-color: #0060c0 !important; }
       .fb-order-badge   { background: #0060c0; }
       .fb-mode-badge    { background: color-mix(in srgb, #0060c0 15%, transparent); border-color: rgba(0,96,192,0.4); color: #0060c0; }
+      .fb-dynamic-hint  { background: color-mix(in srgb, #2d7d46 10%, transparent); color: #1a7f37; }
+      .fb-item--dynamic { border-left-color: color-mix(in srgb, #2d7d46 20%, transparent); }
     }
   `]
 })
-export class FilterBarComponent implements OnInit, OnDestroy {
+export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('menuContent')       menuContentRef?: ElementRef<HTMLDivElement>;
   @ViewChild('dropdownContainer') dropdownContainerRef?: ElementRef<HTMLElement>;
   @ViewChild('triggerBtn')        triggerBtnRef?: ElementRef<HTMLButtonElement>;
   @ViewChild('menuEl')            menuElRef?: ElementRef<HTMLElement>;
 
+  // Static presets (shown alongside dynamic ones)
   @Input() presets: FilterPreset[] = [
     { id: 'all',       name: 'All Files',  filter: '',                        icon: '📄', group: 'Basic' },
     { id: 'folders',   name: 'Folders',    filter: 'type:dir',                icon: '📁', group: 'Basic' },
     { id: 'files',     name: 'Files Only', filter: 'type:file',               icon: '📄', group: 'Basic' },
-    { id: 'images',    name: 'Images',     filter: 'ext:jpg ext:png ext:gif', icon: '🖼️', group: 'Type' },
-    { id: 'documents', name: 'Documents',  filter: 'ext:pdf ext:doc ext:txt', icon: '📝', group: 'Type' },
-    { id: 'code',      name: 'Code',       filter: 'ext:ts ext:js ext:py',    icon: '💻', group: 'Type' },
-    { id: 'recent',    name: 'Recent',     filter: 'modified:today',          icon: '⚡', group: 'Date' },
-    { id: 'large',     name: 'Large',      filter: 'size>10mb',               icon: '📦', group: 'Size' },
   ];
 
-  @Input() quickPresets: FilterPreset[] = [
-    { id: 'folders', name: 'Folders', filter: 'type:dir',        icon: '📁' },
-    { id: 'images',  name: 'Images',  filter: 'ext:jpg ext:png', icon: '🖼️' },
-    { id: 'recent',  name: 'Recent',  filter: 'modified:today',  icon: '⚡' },
-  ];
+  @Input() quickPresets: FilterPreset[] = [];
 
   @Input() totalCount    = 0;
   @Input() filteredCount = 0;
+  @Input() dataset: FileInfo[] = [];
   @Input() showChips     = true;
   @Input() compact       = false;
   @Input() menuWidth     = 250;
 
+  // Configuration for content-aware generation
+  @Input() enableDynamicPresets = true;  // Toggle dynamic preset generation
+  @Input() maxExtensions = 8;            // Max extension groups to show
+  @Input() minGroupSize = 2;             // Minimum files to create a group
+  @Input() extensionBlacklist: string[] = ['tmp', 'log', 'cache']; // Extensions to ignore
+
   /** Emits the full active state (ordered presets + combined string) */
   @Output() filterChange = new EventEmitter<ActiveFilterState>();
   @Output() filterClear  = new EventEmitter<void>();
+  @Output() contentAnalyzed = new EventEmitter<ContentAnalysis>(); // Emit analysis results
 
   isOpen        = false;
   combineMode: 'AND' | 'OR' = 'AND';
@@ -499,25 +562,290 @@ export class FilterBarComponent implements OnInit, OnDestroy {
   /** Selected presets in the order they were picked */
   activePresets: FilterPreset[] = [];
 
+  /** Dynamic presets generated from content analysis */
+  dynamicPresets: FilterPreset[] = [];
+
   get hasActive(): boolean { return this.activePresets.length > 0; }
+  get hasDynamicPresets(): boolean { return this.dynamicPresets.some(p => p.isDynamic); }
 
   private destroy$ = new Subject<void>();
+  private analysisCache?: ContentAnalysis;
 
   // ── Lifecycle ────────────────────────────────────────────
 
-  ngOnInit():    void { this.groupPresets(); }
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnInit(): void { 
+    this.generateDynamicPresets(); 
+    this.groupPresets(); 
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['dataset'] && this.enableDynamicPresets) {
+      this.generateDynamicPresets();
+      this.groupPresets();
+    }
+    if (changes['presets'] && !changes['presets'].firstChange) {
+      this.groupPresets();
+    }
+  }
+
+  ngOnDestroy(): void { 
+    this.destroy$.next(); 
+    this.destroy$.complete(); 
+  }
+
+  // ── Content Analysis & Dynamic Preset Generation ─────────
+
+  private analyzeContent(): ContentAnalysis {
+    if (this.analysisCache && this.dataset === this.analysisCache as any) {
+      return this.analysisCache;
+    }
+
+    const analysis: ContentAnalysis = {
+      extensions: new Map(),
+      dateRanges: { today: 0, thisWeek: 0, thisMonth: 0, older: 0 },
+      sizeTiers: { small: 0, medium: 0, large: 0, huge: 0 },
+      types: { files: 0, directories: 0 },
+      hidden: 0,
+      permissions: new Map()
+    };
+
+    const now = Date.now();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    for (const file of this.dataset) {
+      // Types
+      if (file.type === FileType.DIRECTORY) {
+        analysis.types.directories++;
+      } else {
+        analysis.types.files++;
+      }
+
+      // Extensions (for files only)
+      if (file.type === FileType.FILE) {
+        const ext = this.getExtension(file.name).toLowerCase();
+        if (ext && !this.extensionBlacklist.includes(ext)) {
+          analysis.extensions.set(ext, (analysis.extensions.get(ext) || 0) + 1);
+        }
+      }
+
+      // Date ranges (based on modified time)
+      const modified = file.modified * 1000; // Convert from Unix timestamp
+      if (modified >= today.getTime()) {
+        analysis.dateRanges.today++;
+      } else if (modified >= weekAgo.getTime()) {
+        analysis.dateRanges.thisWeek++;
+      } else if (modified >= monthAgo.getTime()) {
+        analysis.dateRanges.thisMonth++;
+      } else {
+        analysis.dateRanges.older++;
+      }
+
+      // Size tiers (for files only)
+      if (file.type === FileType.DIRECTORY) {
+        const sizeMB = file.size / (1024 * 1024);
+        if (sizeMB < 1) analysis.sizeTiers.small++;
+        else if (sizeMB < 10) analysis.sizeTiers.medium++;
+        else if (sizeMB < 100) analysis.sizeTiers.large++;
+        else analysis.sizeTiers.huge++;
+      }
+
+      // Hidden files
+      if (file.isHidden) analysis.hidden++;
+
+      // Permissions (simplified groups)
+      const permGroup = this.simplifyPermissions(file.permissions);
+      if (permGroup) {
+        analysis.permissions.set(permGroup, (analysis.permissions.get(permGroup) || 0) + 1);
+      }
+    }
+
+    this.analysisCache = analysis;
+    this.contentAnalyzed.emit(analysis);
+    return analysis;
+  }
+
+  private getExtension(filename: string): string {
+    const lastDot = filename.lastIndexOf('.');
+    return lastDot > 0 ? filename.slice(lastDot + 1) : '';
+  }
+
+  private simplifyPermissions(perm: string): string | null {
+    if (!perm) return null;
+    if (perm.startsWith('rwx')) return 'executable';
+    if (perm.includes('w')) return 'writable';
+    if (perm === 'r--r--r--' || perm === 'r--r--r--') return 'read-only';
+    return 'other';
+  }
+
+  generateDynamicPresets(): void {
+    if (!this.enableDynamicPresets || this.dataset.length === 0) {
+      this.dynamicPresets = [];
+      return;
+    }
+
+    const analysis = this.analyzeContent();
+    const newPresets: FilterPreset[] = [];
+
+    // 1. Popular Extensions (Top N by count)
+    const sortedExts = Array.from(analysis.extensions.entries())
+      .filter(([, count]) => count >= this.minGroupSize)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, this.maxExtensions);
+
+    const extIcons: Record<string, string> = {
+      js: '⚡', ts: '🔷', json: '📋', md: '📝', txt: '📄',
+      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🎨',
+      pdf: '📕', doc: '📘', docx: '📘', xls: '📊', xlsx: '📊',
+      zip: '📦', tar: '📦', gz: '📦', rar: '📦',
+      mp3: '🎵', mp4: '🎬', wav: '🎵', mov: '🎬',
+      html: '🌐', css: '🎨', scss: '🎨', sass: '🎨',
+      py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️', h: '📋',
+      go: '🔹', rs: '⚙️', rb: '💎', php: '🐘',
+      yaml: '⚙️', yml: '⚙️', xml: '📋', sql: '🗄️',
+      sh: '⌨️', bash: '⌨️', zsh: '⌨️', ps1: '⌨️',
+      dockerfile: '🐳', gitignore: '🔒', env: '🔧', config: '⚙️'
+    };
+
+    for (const [ext, count] of sortedExts) {
+      newPresets.push({
+        id: `dyn-ext-${ext}`,
+        name: `.${ext.toUpperCase()} Files`,
+        filter: `ext:${ext}`,
+        icon: extIcons[ext] || '📄',
+        group: 'Extensions',
+        isDynamic: true,
+        count,
+        description: `${count} files with .${ext} extension`
+      });
+    }
+
+    // 2. Date-based filters
+    if (analysis.dateRanges.today >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-today',
+        name: 'Modified Today',
+        filter: 'modified:today',
+        icon: '⚡',
+        group: 'Date',
+        isDynamic: true,
+        count: analysis.dateRanges.today,
+        description: 'Files modified today'
+      });
+    }
+
+    if (analysis.dateRanges.thisWeek >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-this-week',
+        name: 'This Week',
+        filter: 'modified:thisweek',
+        icon: '📅',
+        group: 'Date',
+        isDynamic: true,
+        count: analysis.dateRanges.thisWeek,
+        description: 'Files modified in the last 7 days'
+      });
+    }
+
+    if (analysis.dateRanges.thisMonth >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-this-month',
+        name: 'This Month',
+        filter: 'modified:thismonth',
+        icon: '📆',
+        group: 'Date',
+        isDynamic: true,
+        count: analysis.dateRanges.thisMonth,
+        description: 'Files modified in the last 30 days'
+      });
+    }
+
+    // 3. Size-based filters
+    if (analysis.sizeTiers.large >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-large',
+        name: 'Large Files (10-100MB)',
+        filter: 'size:10mb..100mb',
+        icon: '📦',
+        group: 'Size',
+        isDynamic: true,
+        count: analysis.sizeTiers.large,
+        description: 'Files between 10MB and 100MB'
+      });
+    }
+
+    if (analysis.sizeTiers.huge >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-huge',
+        name: 'Huge Files (>100MB)',
+        filter: 'size:>100mb',
+        icon: '🐋',
+        group: 'Size',
+        isDynamic: true,
+        count: analysis.sizeTiers.huge,
+        description: 'Files larger than 100MB'
+      });
+    }
+
+    // 4. Special filters
+    if (analysis.hidden >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-hidden',
+        name: 'Hidden Files',
+        filter: 'hidden:true',
+        icon: '👻',
+        group: 'Special',
+        isDynamic: true,
+        count: analysis.hidden,
+        description: 'Hidden files and directories'
+      });
+    }
+
+    // 5. Type-specific
+    if (analysis.types.directories >= this.minGroupSize) {
+      newPresets.push({
+        id: 'dyn-folders',
+        name: `Folders (${analysis.types.directories})`,
+        filter: 'type:dir',
+        icon: '📁',
+        group: 'Type',
+        isDynamic: true,
+        count: analysis.types.directories,
+        description: 'Directories only'
+      });
+    }
+
+    this.dynamicPresets = newPresets;
+  }
+
+  regenerateDynamicPresets(): void {
+    this.analysisCache = undefined;
+    this.generateDynamicPresets();
+    this.groupPresets();
+  }
 
   // ── Grouping ─────────────────────────────────────────────
 
   private groupPresets(): void {
+    const allPresets = [...this.presets, ...this.dynamicPresets];
     const map = new Map<string, FilterPreset[]>();
-    for (const p of this.presets) {
+    
+    for (const p of allPresets) {
       const g = p.group || 'Other';
       if (!map.has(g)) map.set(g, []);
       map.get(g)!.push(p);
     }
-    this.groupedPresets = Array.from(map.entries()).map(([name, presets]) => ({ name, presets }));
+
+    // Sort groups by priority
+    const groupOrder = ['Basic', 'Type', 'Extensions', 'Date', 'Size', 'Special', 'Other'];
+    const sortedGroups = Array.from(map.entries()).sort((a, b) => {
+      const idxA = groupOrder.indexOf(a[0]);
+      const idxB = groupOrder.indexOf(b[0]);
+      return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+    });
+
+    this.groupedPresets = sortedGroups.map(([name, presets]) => ({ name, presets }));
   }
 
   // ── Selection ─────────────────────────────────────────────
@@ -615,9 +943,10 @@ export class FilterBarComponent implements OnInit, OnDestroy {
     if (p.filter.includes('type:dir'))   return '📁';
     if (p.filter.includes('type:file'))  return '📄';
     if (p.filter.includes('ext:pdf'))    return '📕';
-    if (p.filter.includes('ext:jpg'))    return '🖼️';
+    if (p.filter.includes('ext:jpg') || p.filter.includes('ext:png') || p.filter.includes('ext:gif')) return '🖼️';
     if (p.filter.includes('size>'))      return '📦';
     if (p.filter.includes('modified:'))  return '⚡';
+    if (p.filter.includes('hidden:'))    return '👻';
     return '📄';
   }
 
