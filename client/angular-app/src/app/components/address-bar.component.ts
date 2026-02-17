@@ -220,33 +220,42 @@ function parentPath(p: string): string {
     </div>
 
     <!-- Scrollable breadcrumb trail -->
-    <div class="ab-crumbs" #crumbsEl (click)="enterEditMode()">
-      <ng-container *ngFor="let seg of segments; let i = index; let last = last">
+    <div 
+      class="ab-crumbs" 
+      (click)="onCrumbsClick($event)"
+    >
+      <div class="ab-crumbs-inner" #crumbsEl>
+        <ng-container *ngFor="let seg of segments; let i = index; let last = last">
 
-        <!-- Segment pill -->
-        <span
-          class="ab-seg"
-          [class.ab-seg--root]="seg.isRoot"
-          [class.ab-seg--last]="last"
-          [class.ab-seg--win-drive]="seg.isRoot && isWin"
-          (click)="onSegClick(seg, $event)"
-          (contextmenu)="onSegRightClick(seg, i, $event)"
-          [title]="seg.fullPath"
-        >{{ seg.label }}</span>
+          <!-- Segment pill -->
+          <span
+            class="ab-seg"
+            [class.ab-seg--root]="seg.isRoot"
+            [class.ab-seg--last]="last"
+            [class.ab-seg--win-drive]="seg.isRoot && isWin"
+            (click)="onSegClick(seg, $event)"
+            (contextmenu)="onSegRightClick(seg, i, $event)"
+            [title]="seg.fullPath"
+          >{{ seg.label }}</span>
 
-        <!-- Chevron + sibling dropdown (between segments) -->
-        <div class="ab-chev-wrap" *ngIf="!last">
-          <button
-            class="ab-chev"
-            [class.ab-chev--open]="chevIdx === i"
-            (click)="toggleChev(i, seg, $event)"
-            aria-label="Browse siblings"
-          >›</button>
-
-          <!-- Sibling dropdown -->
-          <div class="ab-dropdown ab-sib-drop" *ngIf="chevIdx === i">
+          <!-- Chevron + sibling dropdown (between segments) -->
+          <div class="ab-chev-wrap" *ngIf="!last">
+            <button
+              class="ab-chev"
+              [class.ab-chev--open]="chevIdx === i"
+              (click)="toggleChev(i, seg, $event)"
+              aria-label="Browse siblings"
+              #chevBtn
+            >›</button>
+          </div>
+          <!-- Sibling dropdown rendered at root for visibility -->
+          <div
+            class="ab-dropdown ab-sib-drop"
+            *ngIf="chevIdx >= 0"
+            [ngStyle]="{ left: sibDropLeft + 'px', top: sibDropTop + 'px', position: 'fixed' }"
+          >
             <div class="ab-drop-head">
-              <span>{{ seg.label }}<span class="ab-drop-sep">/</span></span>
+              <span>{{ segments[chevIdx].label }}</span>
               <span class="ab-drop-count" *ngIf="!sibLoading">{{ siblings.length }}</span>
             </div>
             <div class="ab-drop-loading" *ngIf="sibLoading">
@@ -269,9 +278,8 @@ function parentPath(p: string): string {
               </svg>
             </div>
           </div>
-        </div>
-
-      </ng-container>
+        </ng-container>
+      </div>
     </div>
 
     <!-- Right cluster: Up / Refresh / Copy -->
@@ -379,7 +387,6 @@ function parentPath(p: string): string {
 :host {
   display: block;
   position: relative;
-  z-index: 100;
   font-family: var(--vsc-font-family);
   font-size: var(--vsc-font-size);
 }
@@ -398,7 +405,7 @@ function parentPath(p: string): string {
   height: 32px;
   padding: 0 4px;
   gap: 2px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ab-bar--compact { height: 27px; }
@@ -457,20 +464,29 @@ function parentPath(p: string): string {
 
 /* ── Crumbs scroll area ───────────────────────────────── */
 .ab-crumbs {
+  display: block;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: visible; /* allow dropdowns to overflow */
+  cursor: text;
+}
+
+.ab-crumbs-inner {
   display: flex;
   align-items: center;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
-  cursor: text;
+  overflow-y: visible;
   gap: 0;
   scroll-behavior: smooth;
+  position: static !important;
 
   /* Hide scrollbar but keep scrollable */
   scrollbar-width: none;
-  &::-webkit-scrollbar { display: none; }
 }
+.ab-crumbs-inner::-webkit-scrollbar { display: none; }
 
 /* ── Segment pill ─────────────────────────────────────── */
 .ab-seg {
@@ -529,6 +545,8 @@ function parentPath(p: string): string {
   position: relative;
   flex-shrink: 0;
 }
+
+.ab-chev-wrap { overflow: visible; }
 
 .ab-chev {
   display: flex;
@@ -703,6 +721,7 @@ function parentPath(p: string): string {
 
 /* ── Sibling dropdown ─────────────────────────────────── */
 .ab-sib-drop {
+  position: absolute;
   top: calc(100% + 4px);
   left: -8px;
   min-width: 210px;
@@ -711,6 +730,7 @@ function parentPath(p: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  z-index: 10020; /* ensure above other panels */
 }
 
 .ab-sib-drop > .ab-drop-item {
@@ -971,6 +991,8 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   chevIdx = -1;
   siblings: SiblingEntry[] = [];
   sibLoading = false;
+  sibDropLeft = 0;
+  sibDropTop = 0;
 
   // ── State: pinned paths ──────────────────────────────────
   pinnedPaths: PinnedPath[] = [];
@@ -1082,6 +1104,12 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
+    // Find the chevron button's screen position
+    const target = e.target as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    this.sibDropLeft = Math.round(rect.left);
+    this.sibDropTop = Math.round(rect.bottom + 4); // 4px gap
+
     this.chevIdx = idx;
     this.siblings = [];
     this.sibLoading = true;
@@ -1109,6 +1137,15 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
     this.chevIdx = -1;
     this.siblings = [];
     this.navigateTo(s.path);
+  }
+
+  onCrumbsClick(e: MouseEvent): void {
+    // Only enter edit mode if clicking directly on the crumbs container,
+    // not on its children (segments or chevrons)
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('ab-crumbs')) {
+      this.enterEditMode();
+    }
   }
 
   // ────────────────────────────────────────────────────────
