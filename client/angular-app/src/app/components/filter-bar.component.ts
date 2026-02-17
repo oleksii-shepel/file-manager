@@ -1,7 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ViewChild, ElementRef, HostListener, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject } from 'rxjs';
 import { FileInfo, FileType } from '@shared/protocol';
 
 export interface FilterPreset {
@@ -11,8 +11,8 @@ export interface FilterPreset {
   icon?: string;
   description?: string;
   group?: string;
-  isDynamic?: boolean; // Flag to identify auto-generated presets
-  count?: number;      // Number of matching files
+  isDynamic?: boolean;
+  count?: number;
 }
 
 export interface FilterGroup {
@@ -20,13 +20,11 @@ export interface FilterGroup {
   presets: FilterPreset[];
 }
 
-// The combined filter state emitted to the parent
 export interface ActiveFilterState {
-  presets: FilterPreset[];   // all selected presets in selection order
-  combined: string;          // joined filter string ready for consumption
+  presets: FilterPreset[];
+  combined: string;
 }
 
-// Content analysis result for generating dynamic presets
 interface ContentAnalysis {
   extensions: Map<string, number>;
   dateRanges: { today: number; thisWeek: number; thisMonth: number; older: number };
@@ -45,21 +43,21 @@ export interface FileCategory {
 }
 
 const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
-  { id: 'images', name: 'Images', icon: '🖼️', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'raw', 'heic'], description: 'Image files' },
-  { id: 'documents', name: 'Documents', icon: '📄', extensions: ['pdf', 'doc', 'docx', 'odt', 'rtf', 'tex', 'epub'], description: 'Document files' },
-  { id: 'spreadsheets', name: 'Spreadsheets', icon: '📊', extensions: ['xls', 'xlsx', 'ods', 'csv', 'tsv'], description: 'Spreadsheet files' },
-  { id: 'presentations', name: 'Presentations', icon: '📽️', extensions: ['ppt', 'pptx', 'odp', 'key'], description: 'Presentation files' },
-  { id: 'code', name: 'Code', icon: '💻', extensions: ['js', 'ts', 'jsx', 'tsx', 'vue', 'py', 'java', 'cpp', 'c', 'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'm', 'mm'], description: 'Source code files' },
-  { id: 'web', name: 'Web', icon: '🌐', extensions: ['html', 'htm', 'css', 'scss', 'sass', 'less', 'xml', 'xsl'], description: 'Web files' },
-  { id: 'data', name: 'Data', icon: '🗄️', extensions: ['json', 'yaml', 'yml', 'toml', 'ini', 'sql', 'graphql', 'proto'], description: 'Data and config files' },
-  { id: 'archives', name: 'Archives', icon: '📦', extensions: ['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'iso', 'dmg'], description: 'Archive files' },
-  { id: 'audio', name: 'Audio', icon: '🎵', extensions: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'aiff'], description: 'Audio files' },
-  { id: 'video', name: 'Video', icon: '🎬', extensions: ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg'], description: 'Video files' },
-  { id: 'fonts', name: 'Fonts', icon: '🔤', extensions: ['ttf', 'otf', 'woff', 'woff2', 'eot'], description: 'Font files' },
-  { id: 'markdown', name: 'Markdown', icon: '📝', extensions: ['md', 'mdx', 'rst', 'adoc'], description: 'Markdown files' },
-  { id: 'scripts', name: 'Scripts', icon: '⌨️', extensions: ['sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd', 'vbs', 'applescript'], description: 'Script files' },
-  { id: '3d', name: '3D', icon: '🎲', extensions: ['obj', 'fbx', 'stl', 'blend', '3ds', 'dae', 'gltf', 'glb'], description: '3D model files' },
-  { id: 'design', name: 'Design', icon: '🎨', extensions: ['fig', 'sketch', 'xd', 'psd', 'ai', 'afdesign', 'afphoto'], description: 'Design files' }
+  { id: 'images',        name: 'Images',        icon: '🖼️',  extensions: ['jpg','jpeg','png','gif','webp','svg','bmp','ico','tiff','raw','heic'], description: 'Image files' },
+  { id: 'documents',     name: 'Documents',     icon: '📄',  extensions: ['pdf','doc','docx','odt','rtf','tex','epub'], description: 'Document files' },
+  { id: 'spreadsheets',  name: 'Spreadsheets',  icon: '📊',  extensions: ['xls','xlsx','ods','csv','tsv'], description: 'Spreadsheet files' },
+  { id: 'presentations', name: 'Presentations', icon: '📽️', extensions: ['ppt','pptx','odp','key'], description: 'Presentation files' },
+  { id: 'code',          name: 'Code',          icon: '💻',  extensions: ['js','ts','jsx','tsx','vue','py','java','cpp','c','h','hpp','cs','go','rs','rb','php','swift','kt','scala','r','m','mm'], description: 'Source code files' },
+  { id: 'web',           name: 'Web',           icon: '🌐',  extensions: ['html','htm','css','scss','sass','less','xml','xsl'], description: 'Web files' },
+  { id: 'data',          name: 'Data',          icon: '🗄️', extensions: ['json','yaml','yml','toml','ini','sql','graphql','proto'], description: 'Data and config files' },
+  { id: 'archives',      name: 'Archives',      icon: '📦',  extensions: ['zip','tar','gz','bz2','xz','7z','rar','iso','dmg'], description: 'Archive files' },
+  { id: 'audio',         name: 'Audio',         icon: '🎵',  extensions: ['mp3','wav','flac','aac','ogg','m4a','wma','aiff'], description: 'Audio files' },
+  { id: 'video',         name: 'Video',         icon: '🎬',  extensions: ['mp4','mov','avi','mkv','wmv','flv','webm','m4v','mpg','mpeg'], description: 'Video files' },
+  { id: 'fonts',         name: 'Fonts',         icon: '🔤',  extensions: ['ttf','otf','woff','woff2','eot'], description: 'Font files' },
+  { id: 'markdown',      name: 'Markdown',      icon: '📝',  extensions: ['md','mdx','rst','adoc'], description: 'Markdown files' },
+  { id: 'scripts',       name: 'Scripts',       icon: '⌨️', extensions: ['sh','bash','zsh','fish','ps1','bat','cmd','vbs','applescript'], description: 'Script files' },
+  { id: '3d',            name: '3D',            icon: '🎲',  extensions: ['obj','fbx','stl','blend','3ds','dae','gltf','glb'], description: '3D model files' },
+  { id: 'design',        name: 'Design',        icon: '🎨',  extensions: ['fig','sketch','xd','psd','ai','afdesign','afphoto'], description: 'Design files' },
 ];
 
 @Component({
@@ -69,7 +67,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
   template: `
     <div class="filter-bar" [class.filter-bar--compact]="compact">
 
-      <!-- ── Trigger button ─────────────────────────────── -->
+      <!-- ── Trigger button ────────────────────────────────── -->
       <div class="fb-anchor" #dropdownContainer>
         <button
           #triggerBtn
@@ -122,7 +120,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
                 <span>{{ group.name }}</span>
                 <span class="fb-badge">{{ group.presets.length }}</span>
               </div>
-
               <div *ngFor="let preset of group.presets; let pi = index"
                 class="fb-item"
                 [class.fb-item--checked]="isSelected(preset)"
@@ -165,19 +162,32 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
         </div>
       </div>
 
-      <!-- ── Category chips — always visible, toggle in place ──────── -->
-      <div class="fb-chips" *ngIf="showChips && visibleCategoryChips.length > 0">
-        <button *ngFor="let chip of visibleCategoryChips"
-          class="fb-chip" [class.fb-chip--on]="isSelected(chip.preset)"
+      <!-- ── Chip strip — always visible ───────────────────── -->
+      <div class="fb-chips" *ngIf="showChips && allChips.length > 0">
+
+        <!-- Mode badge — shown when >1 chip selected, click to toggle AND/OR -->
+        <button
+          *ngIf="activePresets.length > 1"
+          class="fb-mode-badge"
+          (click)="setCombineMode(combineMode === 'AND' ? 'OR' : 'AND')"
+          [title]="'Combining with ' + combineMode + ' — click to switch to ' + (combineMode === 'AND' ? 'OR' : 'AND')"
+        >{{ combineMode }}</button>
+
+        <button *ngFor="let chip of allChips"
+          class="fb-chip"
+          [class.fb-chip--on]="isSelected(chip.preset)"
+          [class.fb-chip--extra]="chip.isExtra"
           (click)="togglePreset(chip.preset)"
           [title]="chip.preset.description || chip.preset.name">
-          <span class="fb-chip-icon">{{ chip.preset.icon }}</span>
+          <span class="fb-chip-icon">{{ chip.preset.icon || getDefaultIcon(chip.preset) }}</span>
           <span class="fb-chip-label">{{ chip.preset.name }}</span>
-          <span class="fb-chip-close" *ngIf="isSelected(chip.preset)">✕</span>
+          <span class="fb-chip-close" *ngIf="isSelected(chip.preset)" (click)="$event.stopPropagation(); togglePreset(chip.preset)">
+            <svg width="7" height="7" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+          </span>
         </button>
       </div>
 
-      <!-- ── Count ──────────────────────────────────────── -->
+      <!-- ── Count ──────────────────────────────────────────── -->
       <span class="fb-count" *ngIf="hasActive && totalCount > 0">
         {{ filteredCount }}<span class="fb-count-sep">/</span>{{ totalCount }}
       </span>
@@ -186,7 +196,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
   `,
   styles: [`
     /* ══════════════════════════════════════════════════════
-       FILTER BAR — Multi-filter combination with content-aware categories
+       FILTER BAR — VS Code authentic, 27px height
     ══════════════════════════════════════════════════════ */
 
     :host {
@@ -210,7 +220,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
 
     .filter-bar--compact {
       .fb-trigger  { height: 20px; font-size: 11.5px; }
-      .fb-chip     { height: 18px; }
+      .fb-chip     { height: 16px; }
       .fb-item     { height: 22px; }
       .fb-mode-row { height: 26px; }
     }
@@ -237,7 +247,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     }
 
     .fb-trigger--open { border-color: var(--vsc-border, #3c3c3c); }
-
     .fb-trigger-ico   { display: block; flex-shrink: 0; opacity: 0.85; }
     .fb-trigger-label { font-size: 12px; line-height: 1; }
 
@@ -264,7 +273,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* ── Dynamic hint ─────────────────────────────────────── */
+    /* ── Dynamic hint ────────────────────────────────────── */
     .fb-dynamic-hint {
       display: flex; align-items: center; justify-content: center;
       height: 22px; padding: 0 10px;
@@ -281,7 +290,10 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       border-bottom: 1px solid var(--vsc-border, #3c3c3c);
     }
 
-    .fb-mode-label { font-size: 11px; color: var(--vsc-foreground-dim, #858585); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
+    .fb-mode-label {
+      font-size: 11px; color: var(--vsc-foreground-dim, #858585);
+      text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+    }
 
     .fb-mode-toggle {
       display: flex; align-items: center;
@@ -347,7 +359,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       }
     }
 
-    /* Checkbox */
     .fb-checkbox {
       flex-shrink: 0; display: flex; align-items: center; justify-content: center;
       width: 13px; height: 13px;
@@ -375,7 +386,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       padding: 1px 5px; border-radius: 8px; min-width: 18px; text-align: center;
     }
 
-    /* Selection-order number badge */
     .fb-order-badge {
       flex-shrink: 0; display: flex; align-items: center; justify-content: center;
       width: 16px; height: 16px;
@@ -425,14 +435,33 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       &:hover { background: var(--vsc-list-hover-background, #2a2d2e); border-color: var(--vsc-border-bright, #5a5a5a); color: var(--vsc-foreground, #ccc); }
     }
 
-    /* ── Category chips ─────────────────────────────────── */
+    /* ── Chip strip ──────────────────────────────────────── */
     .fb-chips {
       display: flex; align-items: center; gap: 2px;
       padding-left: 6px;
       border-left: 1px solid var(--vsc-border, #3c3c3c);
+      flex: 1; min-width: 0;
       overflow-x: auto; overflow-y: visible;
       scrollbar-width: none;
       &::-webkit-scrollbar { display: none; }
+    }
+
+    /* AND/OR mode badge — between chips when >1 active */
+    .fb-mode-badge {
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 15px; padding: 0 5px; margin-right: 2px;
+      background: color-mix(in srgb, #007fd4 20%, transparent);
+      border: 1px solid rgba(0,127,212,0.4);
+      border-radius: 2px;
+      font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px;
+      font-family: var(--vsc-font-family-mono, Consolas, monospace);
+      color: #7ec8f8; cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      &:hover {
+        background: color-mix(in srgb, #007fd4 35%, transparent);
+        border-color: rgba(0,127,212,0.7);
+      }
     }
 
     .fb-chip {
@@ -455,21 +484,27 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
         border-color: rgba(0,127,212,0.4);
         color: #ccddff;
       }
+
+      /* Extra chips (from dropdown, not a default category) */
+      &.fb-chip--extra {
+        border-style: dashed;
+        border-color: var(--vsc-border, #3c3c3c);
+        &.fb-chip--on { border-style: solid; }
+      }
     }
 
     .fb-chip-icon  { font-size: 11px; line-height: 1; flex-shrink: 0; }
     .fb-chip-label { white-space: nowrap; line-height: 1; }
+    .fb-chip-count {
+      font-size: 9px; font-weight: 600; opacity: 0.55; margin-left: 1px;
+      font-family: var(--vsc-font-family-mono, Consolas, monospace);
+    }
     .fb-chip-close {
-      font-size: 10px;
-      margin-left: 2px;
-      opacity: 0.8;
-      font-weight: bold;
-      line-height: 1;
-      
-      &:hover {
-        opacity: 1;
-        transform: scale(1.1);
-      }
+      display: flex; align-items: center; justify-content: center;
+      width: 12px; height: 12px; margin-left: 1px;
+      opacity: 0.6; border-radius: 2px;
+      transition: opacity 0.1s, background 0.1s;
+      &:hover { opacity: 1; background: rgba(255,255,255,0.15); }
     }
 
     /* ── Count indicator ─────────────────────────────────── */
@@ -483,8 +518,9 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     /* ── Light theme ─────────────────────────────────────── */
     :host-context(.vscode-light) {
       .fb-trigger--active,
-      .fb-chip--on { background: #0060c0 !important; }
-      .fb-mode-btn--on { background: #0060c0 !important; }
+      .fb-chip--on      { background: #0060c0 !important; }
+      .fb-mode-btn--on  { background: #0060c0 !important; }
+      .fb-mode-badge    { background: color-mix(in srgb, #0060c0 15%, transparent); border-color: rgba(0,96,192,0.4); color: #0060c0; }
       .fb-item--checked { background: color-mix(in srgb, #0060c0 10%, transparent); border-left-color: #0060c0; }
       .fb-checkbox--on  { background: #0060c0 !important; border-color: #0060c0 !important; }
       .fb-order-badge   { background: #0060c0; }
@@ -499,60 +535,51 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('triggerBtn')        triggerBtnRef?: ElementRef<HTMLButtonElement>;
   @ViewChild('menuEl')            menuElRef?: ElementRef<HTMLElement>;
 
-  // Static presets (shown alongside dynamic ones)
   @Input() presets: FilterPreset[] = [
-    { id: 'all',       name: 'All Files',  filter: '',                        icon: '📄', group: 'Basic' },
-    { id: 'folders',   name: 'Folders',    filter: 'type:dir',                icon: '📁', group: 'Basic' },
-    { id: 'files',     name: 'Files Only', filter: 'type:file',               icon: '📄', group: 'Basic' },
+    { id: 'all',     name: 'All Files',  filter: '',          icon: '📄', group: 'Basic' },
+    { id: 'folders', name: 'Folders',    filter: 'type:dir',  icon: '📁', group: 'Basic' },
+    { id: 'files',   name: 'Files Only', filter: 'type:file', icon: '📄', group: 'Basic' },
   ];
 
-  @Input() quickPresets: FilterPreset[] = [];
+  @Input() quickPresets:  FilterPreset[] = [];
+  @Input() totalCount     = 0;
+  @Input() filteredCount  = 0;
+  @Input() dataset:       FileInfo[] = [];
+  @Input() showChips      = true;
+  @Input() compact        = true;
+  @Input() menuWidth      = 250;
 
-  @Input() totalCount    = 0;
-  @Input() filteredCount = 0;
-  @Input() dataset: FileInfo[] = [];
-  @Input() showChips     = true;
-  @Input() compact       = true;
-  @Input() menuWidth     = 250;
+  @Input() enableDynamicPresets  = true;
+  @Input() maxExtensions         = 8;
+  @Input() minGroupSize          = 2;
+  @Input() extensionBlacklist:   string[] = ['tmp', 'log', 'cache'];
 
-  // Configuration for content-aware generation
-  @Input() enableDynamicPresets = true;  // Toggle dynamic preset generation
-  @Input() maxExtensions = 8;            // Max extension groups to show
-  @Input() minGroupSize = 2;             // Minimum files to create a group
-  @Input() extensionBlacklist: string[] = ['tmp', 'log', 'cache']; // Extensions to ignore
-
-  /** Emits the full active state (ordered presets + combined string) */
-  @Output() filterChange = new EventEmitter<ActiveFilterState>();
-  @Output() filterClear  = new EventEmitter<void>();
-  @Output() contentAnalyzed = new EventEmitter<ContentAnalysis>(); // Emit analysis results
+  @Output() filterChange    = new EventEmitter<ActiveFilterState>();
+  @Output() filterClear     = new EventEmitter<void>();
+  @Output() contentAnalyzed = new EventEmitter<ContentAnalysis>();
 
   isOpen        = false;
   combineMode: 'AND' | 'OR' = 'AND';
   focusedIdx    = -1;
   groupedPresets: FilterGroup[] = [];
-  dropPos = { top: 0, left: 0 };
-
-  /** Selected presets in the order they were picked */
+  dropPos       = { top: 0, left: 0 };
   activePresets: FilterPreset[] = [];
-
-  /** Dynamic presets generated from content analysis */
   dynamicPresets: FilterPreset[] = [];
 
   get hasActive(): boolean { return this.activePresets.length > 0; }
   get hasDynamicPresets(): boolean { return this.dynamicPresets.some(p => p.isDynamic); }
 
-  /** Category chips derived from DEFAULT_FILE_CATEGORIES, filtered to only those present in dataset */
-  get visibleCategoryChips(): Array<{ preset: FilterPreset; count: number }> {
-    if (!this.dataset || this.dataset.length === 0) {
-      // No dataset yet — show all categories with count 0
-      return DEFAULT_FILE_CATEGORIES.map(cat => ({
-        preset: this.categoryToPreset(cat),
-        count: 0,
-      }));
-    }
+  /**
+   * All chips to show in the bar:
+   * 1. Default category chips (filtered to those present in dataset)
+   * 2. Any active preset from the dropdown that isn't already a category chip
+   *    (shown as an "extra" dashed chip so it's always reachable)
+   */
+  get allChips(): Array<{ preset: FilterPreset; count: number; isExtra: boolean }> {
+    const categoryChipIds = new Set<string>();
+    const chips: Array<{ preset: FilterPreset; count: number; isExtra: boolean }> = [];
 
-    const results: Array<{ preset: FilterPreset; count: number }> = [];
-
+    // Build category chips
     for (const cat of DEFAULT_FILE_CATEGORIES) {
       const extSet = new Set(cat.extensions);
       const count  = this.dataset.filter(f =>
@@ -560,12 +587,23 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
         extSet.has((f.name.split('.').pop() ?? '').toLowerCase())
       ).length;
 
-      if (count > 0) {
-        results.push({ preset: this.categoryToPreset(cat, count), count });
+      // Show if dataset has matches, OR if no dataset yet (show all), OR if already active
+      const catPreset = this.categoryToPreset(cat, count);
+      categoryChipIds.add(catPreset.id);
+
+      if (count > 0 || this.dataset.length === 0 || this.isSelected(catPreset)) {
+        chips.push({ preset: catPreset, count, isExtra: false });
       }
     }
 
-    return results;
+    // Add any active dropdown preset that doesn't correspond to a category chip
+    for (const active of this.activePresets) {
+      if (!categoryChipIds.has(active.id)) {
+        chips.push({ preset: active, count: active.count ?? 0, isExtra: true });
+      }
+    }
+
+    return chips;
   }
 
   private categoryToPreset(cat: FileCategory, count?: number): FilterPreset {
@@ -585,13 +623,14 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
 
   // ── Lifecycle ────────────────────────────────────────────
 
-  ngOnInit(): void { 
-    this.generateDynamicPresets(); 
-    this.groupPresets(); 
+  ngOnInit(): void {
+    this.generateDynamicPresets();
+    this.groupPresets();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['dataset'] && this.enableDynamicPresets) {
+      this.analysisCache = undefined;
       this.generateDynamicPresets();
       this.groupPresets();
     }
@@ -600,77 +639,57 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  ngOnDestroy(): void { 
-    this.destroy$.next(); 
-    this.destroy$.complete(); 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
-  // ── Content Analysis & Dynamic Preset Generation ─────────
+  // ── Content Analysis ─────────────────────────────────────
 
   private analyzeContent(): ContentAnalysis {
-    if (this.analysisCache && this.dataset === this.analysisCache as any) {
-      return this.analysisCache;
-    }
-
     const analysis: ContentAnalysis = {
       extensions: new Map(),
       dateRanges: { today: 0, thisWeek: 0, thisMonth: 0, older: 0 },
-      sizeTiers: { small: 0, medium: 0, large: 0, huge: 0 },
-      types: { files: 0, directories: 0 },
-      hidden: 0,
-      permissions: new Map()
+      sizeTiers:  { small: 0, medium: 0, large: 0, huge: 0 },
+      types:      { files: 0, directories: 0 },
+      hidden:     0,
+      permissions: new Map(),
     };
 
-    const now = Date.now();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const now      = Date.now();
+    const today    = new Date(); today.setHours(0, 0, 0, 0);
+    const weekAgo  = new Date(now - 7  * 24 * 60 * 60 * 1000);
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
     for (const file of this.dataset) {
-      // Types
       if (file.type === FileType.DIRECTORY) {
         analysis.types.directories++;
       } else {
         analysis.types.files++;
-      }
-
-      // Extensions (for files only)
-      if (file.type === FileType.FILE) {
         const ext = this.getExtension(file.name).toLowerCase();
         if (ext && !this.extensionBlacklist.includes(ext)) {
           analysis.extensions.set(ext, (analysis.extensions.get(ext) || 0) + 1);
         }
       }
 
-      // Date ranges (based on modified time)
-      const modified = file.modified * 1000; // Convert from Unix timestamp
-      if (modified >= today.getTime()) {
-        analysis.dateRanges.today++;
-      } else if (modified >= weekAgo.getTime()) {
-        analysis.dateRanges.thisWeek++;
-      } else if (modified >= monthAgo.getTime()) {
-        analysis.dateRanges.thisMonth++;
-      } else {
-        analysis.dateRanges.older++;
-      }
+      const modified = file.modified * 1000;
+      if      (modified >= today.getTime())    analysis.dateRanges.today++;
+      else if (modified >= weekAgo.getTime())  analysis.dateRanges.thisWeek++;
+      else if (modified >= monthAgo.getTime()) analysis.dateRanges.thisMonth++;
+      else                                     analysis.dateRanges.older++;
 
-      // Size tiers (for files only)
-      if (file.type === FileType.DIRECTORY) {
+      if (file.type !== FileType.DIRECTORY) {
         const sizeMB = file.size / (1024 * 1024);
-        if (sizeMB < 1) analysis.sizeTiers.small++;
-        else if (sizeMB < 10) analysis.sizeTiers.medium++;
+        if      (sizeMB < 1)   analysis.sizeTiers.small++;
+        else if (sizeMB < 10)  analysis.sizeTiers.medium++;
         else if (sizeMB < 100) analysis.sizeTiers.large++;
-        else analysis.sizeTiers.huge++;
+        else                   analysis.sizeTiers.huge++;
       }
 
-      // Hidden files
       if (file.isHidden) analysis.hidden++;
 
-      // Permissions (simplified groups)
       const permGroup = this.simplifyPermissions(file.permissions);
-      if (permGroup) {
-        analysis.permissions.set(permGroup, (analysis.permissions.get(permGroup) || 0) + 1);
-      }
+      if (permGroup) analysis.permissions.set(permGroup, (analysis.permissions.get(permGroup) || 0) + 1);
     }
 
     this.analysisCache = analysis;
@@ -685,136 +704,62 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
 
   private simplifyPermissions(perm: string): string | null {
     if (!perm) return null;
-    if (perm.startsWith('rwx')) return 'executable';
-    if (perm.includes('w')) return 'writable';
-    if (perm === 'r--r--r--' || perm === 'r--r--r--') return 'read-only';
+    if (perm.startsWith('rwx'))                        return 'executable';
+    if (perm.includes('w'))                            return 'writable';
+    if (perm === 'r--r--r--')                          return 'read-only';
     return 'other';
   }
 
   generateDynamicPresets(): void {
-  if (!this.enableDynamicPresets || this.dataset.length === 0) {
-    this.dynamicPresets = [];
-    return;
-  }
+    if (!this.enableDynamicPresets || this.dataset.length === 0) {
+      this.dynamicPresets = [];
+      return;
+    }
 
-  const analysis = this.analyzeContent();
-  const newPresets: FilterPreset[] = [];
+    const analysis = this.analyzeContent();
+    const newPresets: FilterPreset[] = [];
 
-  // 1. Popular Extensions (Top N by count)
-  const sortedExts = Array.from(analysis.extensions.entries())
-    .filter(([, count]) => count >= this.minGroupSize)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, this.maxExtensions);
+    const extIcons: Record<string, string> = {
+      js: '⚡', ts: '🔷', json: '📋', md: '📝', txt: '📄',
+      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🎨',
+      pdf: '📕', doc: '📘', docx: '📘', xls: '📊', xlsx: '📊',
+      zip: '📦', tar: '📦', gz: '📦', rar: '📦',
+      mp3: '🎵', mp4: '🎬', wav: '🎵', mov: '🎬',
+      html: '🌐', css: '🎨', scss: '🎨', sass: '🎨',
+      py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️', h: '📋',
+      go: '🔹', rs: '⚙️', rb: '💎', php: '🐘',
+      yaml: '⚙️', yml: '⚙️', xml: '📋', sql: '🗄️',
+      sh: '⌨️', bash: '⌨️', zsh: '⌨️', ps1: '⌨️',
+    };
 
-  const extIcons: Record<string, string> = {
-    js: '⚡', ts: '🔷', json: '📋', md: '📝', txt: '📄',
-    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🎨',
-    pdf: '📕', doc: '📘', docx: '📘', xls: '📊', xlsx: '📊',
-    zip: '📦', tar: '📦', gz: '📦', rar: '📦',
-    mp3: '🎵', mp4: '🎬', wav: '🎵', mov: '🎬',
-    html: '🌐', css: '🎨', scss: '🎨', sass: '🎨',
-    py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️', h: '📋',
-    go: '🔹', rs: '⚙️', rb: '💎', php: '🐘',
-    yaml: '⚙️', yml: '⚙️', xml: '📋', sql: '🗄️',
-    sh: '⌨️', bash: '⌨️', zsh: '⌨️', ps1: '⌨️',
-    dockerfile: '🐳', gitignore: '🔒', env: '🔧', config: '⚙️'
-  };
+    const sortedExts = Array.from(analysis.extensions.entries())
+      .filter(([, count]) => count >= this.minGroupSize)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, this.maxExtensions);
 
-  for (const [ext, count] of sortedExts) {
-    newPresets.push({
-      id: `dyn-ext-${ext}`,
-      name: `.${ext.toUpperCase()} Files`, // Removed count from name
-      filter: `ext:${ext}`,
-      icon: extIcons[ext] || '📄',
-      group: 'Extensions',
-      isDynamic: true,
-      count, // Keep count for the badge
-      description: `${count} files with .${ext} extension`
-    });
-  }
+    for (const [ext, count] of sortedExts) {
+      newPresets.push({
+        id: `dyn-ext-${ext}`, name: `.${ext.toUpperCase()} Files`,
+        filter: `ext:${ext}`, icon: extIcons[ext] || '📄',
+        group: 'Extensions', isDynamic: true, count,
+        description: `${count} files with .${ext} extension`,
+      });
+    }
 
-  // 2. Date-based filters
-  if (analysis.dateRanges.today >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-today',
-      name: 'Modified Today', // Removed count from name
-      filter: 'modified:today',
-      icon: '⚡',
-      group: 'Date',
-      isDynamic: true,
-      count: analysis.dateRanges.today,
-      description: `${analysis.dateRanges.today} files modified today`
-    });
-  }
+    if (analysis.dateRanges.today >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-today', name: 'Modified Today', filter: 'modified:today', icon: '⚡', group: 'Date', isDynamic: true, count: analysis.dateRanges.today, description: `${analysis.dateRanges.today} files modified today` });
+    if (analysis.dateRanges.thisWeek >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-this-week', name: 'This Week', filter: 'modified:thisweek', icon: '📅', group: 'Date', isDynamic: true, count: analysis.dateRanges.thisWeek, description: `${analysis.dateRanges.thisWeek} files modified in the last 7 days` });
+    if (analysis.dateRanges.thisMonth >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-this-month', name: 'This Month', filter: 'modified:thismonth', icon: '📆', group: 'Date', isDynamic: true, count: analysis.dateRanges.thisMonth, description: `${analysis.dateRanges.thisMonth} files modified in the last 30 days` });
+    if (analysis.sizeTiers.large >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-large', name: 'Large Files (10-100MB)', filter: 'size:10mb..100mb', icon: '📦', group: 'Size', isDynamic: true, count: analysis.sizeTiers.large, description: `${analysis.sizeTiers.large} files between 10MB and 100MB` });
+    if (analysis.sizeTiers.huge >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-huge', name: 'Huge Files (>100MB)', filter: 'size:>100mb', icon: '🐋', group: 'Size', isDynamic: true, count: analysis.sizeTiers.huge, description: `${analysis.sizeTiers.huge} files larger than 100MB` });
+    if (analysis.hidden >= this.minGroupSize)
+      newPresets.push({ id: 'dyn-hidden', name: 'Hidden Files', filter: 'hidden:true', icon: '👻', group: 'Special', isDynamic: true, count: analysis.hidden, description: `${analysis.hidden} hidden files and directories` });
 
-  if (analysis.dateRanges.thisWeek >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-this-week',
-      name: 'This Week', // Removed count from name
-      filter: 'modified:thisweek',
-      icon: '📅',
-      group: 'Date',
-      isDynamic: true,
-      count: analysis.dateRanges.thisWeek,
-      description: `${analysis.dateRanges.thisWeek} files modified in the last 7 days`
-    });
-  }
-
-  if (analysis.dateRanges.thisMonth >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-this-month',
-      name: 'This Month', // Removed count from name
-      filter: 'modified:thismonth',
-      icon: '📆',
-      group: 'Date',
-      isDynamic: true,
-      count: analysis.dateRanges.thisMonth,
-      description: `${analysis.dateRanges.thisMonth} files modified in the last 30 days`
-    });
-  }
-
-  // 3. Size-based filters
-  if (analysis.sizeTiers.large >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-large',
-      name: 'Large Files (10-100MB)', // Removed count from name
-      filter: 'size:10mb..100mb',
-      icon: '📦',
-      group: 'Size',
-      isDynamic: true,
-      count: analysis.sizeTiers.large,
-      description: `${analysis.sizeTiers.large} files between 10MB and 100MB`
-    });
-  }
-
-  if (analysis.sizeTiers.huge >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-huge',
-      name: 'Huge Files (>100MB)', // Removed count from name
-      filter: 'size:>100mb',
-      icon: '🐋',
-      group: 'Size',
-      isDynamic: true,
-      count: analysis.sizeTiers.huge,
-      description: `${analysis.sizeTiers.huge} files larger than 100MB`
-    });
-  }
-
-  // 4. Special filters
-  if (analysis.hidden >= this.minGroupSize) {
-    newPresets.push({
-      id: 'dyn-hidden',
-      name: 'Hidden Files', // Removed count from name
-      filter: 'hidden:true',
-      icon: '👻',
-      group: 'Special',
-      isDynamic: true,
-      count: analysis.hidden,
-      description: `${analysis.hidden} hidden files and directories`
-    });
-  }
-
-  this.dynamicPresets = newPresets;
+    this.dynamicPresets = newPresets;
   }
 
   regenerateDynamicPresets(): void {
@@ -828,22 +773,17 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   private groupPresets(): void {
     const allPresets = [...this.presets, ...this.dynamicPresets];
     const map = new Map<string, FilterPreset[]>();
-    
     for (const p of allPresets) {
       const g = p.group || 'Other';
       if (!map.has(g)) map.set(g, []);
       map.get(g)!.push(p);
     }
-
-    // Sort groups by priority
     const groupOrder = ['Basic', 'Type', 'Extensions', 'Date', 'Size', 'Special', 'Other'];
-    const sortedGroups = Array.from(map.entries()).sort((a, b) => {
-      const idxA = groupOrder.indexOf(a[0]);
-      const idxB = groupOrder.indexOf(b[0]);
-      return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+    const sorted = Array.from(map.entries()).sort((a, b) => {
+      const ia = groupOrder.indexOf(a[0]), ib = groupOrder.indexOf(b[0]);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     });
-
-    this.groupedPresets = sortedGroups.map(([name, presets]) => ({ name, presets }));
+    this.groupedPresets = sorted.map(([name, presets]) => ({ name, presets }));
   }
 
   // ── Selection ─────────────────────────────────────────────
@@ -865,28 +805,9 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     this.emit();
   }
 
-   toggleChip(preset: FilterPreset): void {
-    // For chips, we temporarily use OR logic without changing the global mode
-    const previousMode = this.combineMode;
-    
-    if (this.isSelected(preset)) {
-      this.activePresets = this.activePresets.filter(p => p.id !== preset.id);
-    } else {
-      this.activePresets = [...this.activePresets, preset];
-    }
-    
-    // Emit with OR mode for this operation only
-    const combined = this.activePresets.map(p => p.filter).filter(Boolean).join(' OR ');
-    this.filterChange.emit({ presets: [...this.activePresets], combined });
-    
-    // Note: We don't change the global combineMode
-  }
-
   setCombineMode(mode: 'AND' | 'OR'): void {
     this.combineMode = mode;
-    if (this.hasActive) {
-      this.emit(); // Re-emit with new mode
-    }
+    if (this.hasActive) this.emit();
   }
 
   clearAll(): void {
@@ -918,7 +839,7 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
 
   onTriggerKey(e: KeyboardEvent, btn: HTMLElement): void {
     if (['ArrowDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); if (!this.isOpen) this.toggleDropdown(btn); }
-    else if (e.key === 'Escape' && this.isOpen) { this.isOpen = false; }
+    else if (e.key === 'Escape' && this.isOpen) this.isOpen = false;
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -928,7 +849,7 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     if      (e.key === 'ArrowDown') { e.preventDefault(); this.focusedIdx = Math.min(this.focusedIdx + 1, total - 1); this.scrollToFocused(); }
     else if (e.key === 'ArrowUp')   { e.preventDefault(); this.focusedIdx = Math.max(this.focusedIdx - 1, 0); this.scrollToFocused(); }
     else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.activateFocused(); }
-    else if (e.key === 'Escape')    { e.preventDefault(); this.isOpen = false; }
+    else if (e.key === 'Escape') { e.preventDefault(); this.isOpen = false; }
   }
 
   private activateFocused(): void {
@@ -946,28 +867,23 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     items[this.focusedIdx]?.scrollIntoView({ block: 'nearest' });
   }
 
-  // ── Index helpers ─────────────────────────────────────────
-
   getItemIdx(gi: number, pi: number): number {
     let idx = 0;
     for (let i = 0; i < gi; i++) idx += this.groupedPresets[i].presets.length;
     return idx + pi;
   }
 
-  // ── Icon defaults ─────────────────────────────────────────
-
   getDefaultIcon(p: FilterPreset): string {
-    if (p.filter.includes('type:dir'))   return '📁';
-    if (p.filter.includes('type:file'))  return '📄';
-    if (p.filter.includes('ext:pdf'))    return '📕';
-    if (p.filter.includes('ext:jpg') || p.filter.includes('ext:png') || p.filter.includes('ext:gif')) return '🖼️';
-    if (p.filter.includes('size>'))      return '📦';
-    if (p.filter.includes('modified:'))  return '⚡';
-    if (p.filter.includes('hidden:'))    return '👻';
+    if (!p.filter) return '📄';
+    if (p.filter.includes('type:dir'))  return '📁';
+    if (p.filter.includes('type:file')) return '📄';
+    if (p.filter.includes('ext:pdf'))   return '📕';
+    if (p.filter.includes('ext:jpg') || p.filter.includes('ext:png')) return '🖼️';
+    if (p.filter.includes('size>'))     return '📦';
+    if (p.filter.includes('modified:')) return '⚡';
+    if (p.filter.includes('hidden:'))   return '👻';
     return '📄';
   }
-
-  // ── Outside click ─────────────────────────────────────────
 
   @HostListener('document:click', ['$event'])
   onDocClick(e: MouseEvent): void {
