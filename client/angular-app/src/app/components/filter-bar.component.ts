@@ -167,7 +167,13 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
 
       <!-- ── Active filter tags ─────────────────────────── -->
       <div class="fb-tags" *ngIf="hasActive">
-        <span class="fb-mode-badge" *ngIf="activePresets.length > 1">{{ combineMode }}</span>
+         <button 
+            class="fb-mode-badge" 
+            *ngIf="activePresets.length > 1"
+            (click)="setCombineMode(combineMode === 'AND' ? 'OR' : 'AND')"
+            [title]="'Click to switch to ' + (combineMode === 'AND' ? 'OR' : 'AND')">
+            {{ combineMode }}
+          </button>
 
         <div class="fb-tag" *ngFor="let p of activePresets" [title]="'Remove: ' + p.name">
           <span class="fb-tag-icon">{{ p.icon || getDefaultIcon(p) }}</span>
@@ -828,19 +834,7 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
       });
     }
 
-    // 5. Type-specific
-    if (analysis.types.directories >= this.minGroupSize) {
-      newPresets.push({
-        id: 'dyn-folders',
-        name: `Folders (${analysis.types.directories})`,
-        filter: 'type:dir',
-        icon: '📁',
-        group: 'Type',
-        isDynamic: true,
-        count: analysis.types.directories,
-        description: 'Directories only'
-      });
-    }
+    // REMOVED: Dynamic folders preset - we use the static one instead
 
     this.dynamicPresets = newPresets;
   }
@@ -893,9 +887,28 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     this.emit();
   }
 
+   toggleChip(preset: FilterPreset): void {
+    // For chips, we temporarily use OR logic without changing the global mode
+    const previousMode = this.combineMode;
+    
+    if (this.isSelected(preset)) {
+      this.activePresets = this.activePresets.filter(p => p.id !== preset.id);
+    } else {
+      this.activePresets = [...this.activePresets, preset];
+    }
+    
+    // Emit with OR mode for this operation only
+    const combined = this.activePresets.map(p => p.filter).filter(Boolean).join(' OR ');
+    this.filterChange.emit({ presets: [...this.activePresets], combined });
+    
+    // Note: We don't change the global combineMode
+  }
+
   setCombineMode(mode: 'AND' | 'OR'): void {
     this.combineMode = mode;
-    if (this.hasActive) this.emit();
+    if (this.hasActive) {
+      this.emit(); // Re-emit with new mode
+    }
   }
 
   clearAll(): void {
