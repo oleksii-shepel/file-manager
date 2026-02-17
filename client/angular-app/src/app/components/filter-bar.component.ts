@@ -165,37 +165,15 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
         </div>
       </div>
 
-      <!-- ── Active filter tags ─────────────────────────── -->
-      <div class="fb-tags" *ngIf="hasActive">
-         <button 
-            class="fb-mode-badge" 
-            *ngIf="activePresets.length > 1"
-            (click)="setCombineMode(combineMode === 'AND' ? 'OR' : 'AND')"
-            [title]="'Click to switch to ' + (combineMode === 'AND' ? 'OR' : 'AND')">
-            {{ combineMode }}
-          </button>
-
-        <div class="fb-tag" *ngFor="let p of activePresets" [title]="'Remove: ' + p.name">
-          <span class="fb-tag-icon">{{ p.icon || getDefaultIcon(p) }}</span>
-          <span class="fb-tag-name">{{ p.name }}</span>
-          <button class="fb-tag-rm" (click)="togglePreset(p)" aria-label="Remove filter">
-            <svg width="8" height="8" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-            </svg>
-          </button>
-        </div>
-
-        <button class="fb-clear-all" (click)="clearAll()" title="Clear all filters">Clear</button>
-      </div>
-
-      <!-- ── Quick chips (only when nothing active) ─────── -->
-      <div class="fb-chips" *ngIf="showChips && quickPresets.length > 0 && !hasActive">
-        <button *ngFor="let p of quickPresets"
-          class="fb-chip" [class.fb-chip--on]="isSelected(p)"
-          (click)="togglePreset(p)" [title]="p.description || p.name">
-          <span>{{ p.icon || getDefaultIcon(p) }}</span>
-          <span>{{ p.name }}</span>
-          <span class="fb-chip-count" *ngIf="p.count !== undefined">{{ p.count }}</span>
+      <!-- ── Category chips — always visible, toggle in place ──────── -->
+      <div class="fb-chips" *ngIf="showChips && visibleCategoryChips.length > 0">
+        <button *ngFor="let chip of visibleCategoryChips"
+          class="fb-chip" [class.fb-chip--on]="isSelected(chip.preset)"
+          (click)="togglePreset(chip.preset)"
+          [title]="chip.preset.description || chip.preset.name">
+          <span class="fb-chip-icon">{{ chip.preset.icon }}</span>
+          <span class="fb-chip-label">{{ chip.preset.name }}</span>
+          <span class="fb-chip-close" *ngIf="isSelected(chip.preset)">✕</span>
         </button>
       </div>
 
@@ -233,7 +211,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     .filter-bar--compact {
       .fb-trigger  { height: 20px; font-size: 11.5px; }
       .fb-chip     { height: 18px; }
-      .fb-tag      { height: 18px; font-size: 11px; }
       .fb-item     { height: 22px; }
       .fb-mode-row { height: 26px; }
     }
@@ -448,82 +425,52 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       &:hover { background: var(--vsc-list-hover-background, #2a2d2e); border-color: var(--vsc-border-bright, #5a5a5a); color: var(--vsc-foreground, #ccc); }
     }
 
-    /* ── Active tags strip ───────────────────────────────── */
-    .fb-tags {
-      display: flex; align-items: center; gap: 3px;
-      flex: 1; min-width: 0;
+    /* ── Category chips ─────────────────────────────────── */
+    .fb-chips {
+      display: flex; align-items: center; gap: 2px;
+      padding-left: 6px;
+      border-left: 1px solid var(--vsc-border, #3c3c3c);
       overflow-x: auto; overflow-y: visible;
       scrollbar-width: none;
       &::-webkit-scrollbar { display: none; }
     }
 
-    .fb-mode-badge {
-      flex-shrink: 0;
-      display: inline-flex; align-items: center; justify-content: center;
-      height: 15px; padding: 0 5px;
-      background: color-mix(in srgb, #007fd4 20%, transparent);
-      border: 1px solid rgba(0,127,212,0.4);
-      border-radius: 2px;
-      font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px;
-      font-family: var(--vsc-font-family-mono, Consolas, monospace);
-      color: #7ec8f8;
-    }
-
-    .fb-tag {
-      flex-shrink: 0;
-      display: inline-flex; align-items: center; gap: 3px;
-      height: 18px; padding: 0 4px 0 6px;
-      background: #094771;
-      border: 1px solid rgba(0,127,212,0.4);
-      border-radius: 2px; color: #ccddff; font-size: 11.5px;
-      animation: fb-tag-in 0.12s cubic-bezier(0.4,0,0.2,1);
-    }
-
-    @keyframes fb-tag-in {
-      from { opacity: 0; transform: scale(0.85); }
-      to   { opacity: 1; transform: scale(1); }
-    }
-
-    .fb-tag-icon { font-size: 11px; line-height: 1; }
-    .fb-tag-name { white-space: nowrap; line-height: 1; }
-    .fb-tag-count { font-size: 10px; opacity: 0.7; margin-left: 2px; }
-
-    .fb-tag-rm {
-      display: flex; align-items: center; justify-content: center;
-      width: 14px; height: 14px; padding: 0;
-      background: transparent; border: none; border-radius: 2px;
-      color: rgba(204,221,255,0.55); cursor: pointer;
-      transition: background 0.1s, color 0.1s; flex-shrink: 0;
-      &:hover { background: rgba(255,255,255,0.15); color: #fff; }
-    }
-
-    .fb-clear-all {
-      flex-shrink: 0;
-      display: inline-flex; align-items: center;
-      height: 18px; padding: 0 6px;
-      background: transparent; border: 1px solid transparent; border-radius: 2px;
-      cursor: pointer; color: var(--vsc-foreground-dim, #858585);
-      font-size: 11.5px; font-family: inherit;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-      &:hover { background: color-mix(in srgb, var(--vsc-error, #f14c4c) 10%, transparent); border-color: rgba(241,76,76,0.4); color: var(--vsc-error, #f14c4c); }
-    }
-
-    /* ── Quick chips ─────────────────────────────────────── */
-    .fb-chips { display: flex; align-items: center; gap: 3px; }
-
     .fb-chip {
       display: inline-flex; align-items: center; gap: 3px;
-      height: 18px; padding: 0 7px;
-      background: transparent; border: 1px solid var(--vsc-border, #3c3c3c);
-      border-radius: 2px; cursor: pointer;
+      height: 18px; padding: 0 6px;
+      background: transparent; border: 1px solid transparent;
+      border-radius: 2px; cursor: pointer; flex-shrink: 0;
       color: var(--vsc-foreground-dim, #858585);
       font-size: 11.5px; font-family: inherit;
       transition: background 0.08s, border-color 0.08s, color 0.08s;
-      &:hover { background: var(--vsc-list-hover-background, #2a2d2e); border-color: var(--vsc-border-bright, #5a5a5a); color: var(--vsc-foreground, #ccc); }
-      &.fb-chip--on { background: #094771; border-color: transparent; color: #ccddff; }
+
+      &:hover {
+        background: var(--vsc-list-hover-background, #2a2d2e);
+        border-color: var(--vsc-border, #3c3c3c);
+        color: var(--vsc-foreground, #ccc);
+      }
+
+      &.fb-chip--on {
+        background: #094771;
+        border-color: rgba(0,127,212,0.4);
+        color: #ccddff;
+      }
     }
 
-    .fb-chip-count { font-size: 9.5px; opacity: 0.8; margin-left: 2px; }
+    .fb-chip-icon  { font-size: 11px; line-height: 1; flex-shrink: 0; }
+    .fb-chip-label { white-space: nowrap; line-height: 1; }
+    .fb-chip-close {
+      font-size: 10px;
+      margin-left: 2px;
+      opacity: 0.8;
+      font-weight: bold;
+      line-height: 1;
+      
+      &:hover {
+        opacity: 1;
+        transform: scale(1.1);
+      }
+    }
 
     /* ── Count indicator ─────────────────────────────────── */
     .fb-count {
@@ -537,12 +484,10 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     :host-context(.vscode-light) {
       .fb-trigger--active,
       .fb-chip--on { background: #0060c0 !important; }
-      .fb-tag       { background: #0060c0; }
       .fb-mode-btn--on { background: #0060c0 !important; }
       .fb-item--checked { background: color-mix(in srgb, #0060c0 10%, transparent); border-left-color: #0060c0; }
       .fb-checkbox--on  { background: #0060c0 !important; border-color: #0060c0 !important; }
       .fb-order-badge   { background: #0060c0; }
-      .fb-mode-badge    { background: color-mix(in srgb, #0060c0 15%, transparent); border-color: rgba(0,96,192,0.4); color: #0060c0; }
       .fb-dynamic-hint  { background: color-mix(in srgb, #2d7d46 10%, transparent); color: #1a7f37; }
       .fb-item--dynamic { border-left-color: color-mix(in srgb, #2d7d46 20%, transparent); }
     }
@@ -595,6 +540,45 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
 
   get hasActive(): boolean { return this.activePresets.length > 0; }
   get hasDynamicPresets(): boolean { return this.dynamicPresets.some(p => p.isDynamic); }
+
+  /** Category chips derived from DEFAULT_FILE_CATEGORIES, filtered to only those present in dataset */
+  get visibleCategoryChips(): Array<{ preset: FilterPreset; count: number }> {
+    if (!this.dataset || this.dataset.length === 0) {
+      // No dataset yet — show all categories with count 0
+      return DEFAULT_FILE_CATEGORIES.map(cat => ({
+        preset: this.categoryToPreset(cat),
+        count: 0,
+      }));
+    }
+
+    const results: Array<{ preset: FilterPreset; count: number }> = [];
+
+    for (const cat of DEFAULT_FILE_CATEGORIES) {
+      const extSet = new Set(cat.extensions);
+      const count  = this.dataset.filter(f =>
+        f.type !== FileType.DIRECTORY &&
+        extSet.has((f.name.split('.').pop() ?? '').toLowerCase())
+      ).length;
+
+      if (count > 0) {
+        results.push({ preset: this.categoryToPreset(cat, count), count });
+      }
+    }
+
+    return results;
+  }
+
+  private categoryToPreset(cat: FileCategory, count?: number): FilterPreset {
+    return {
+      id:          `cat-${cat.id}`,
+      name:        cat.name,
+      filter:      cat.extensions.map(e => `ext:${e}`).join(' '),
+      icon:        cat.icon,
+      description: cat.description,
+      group:       'Type',
+      count,
+    };
+  }
 
   private destroy$ = new Subject<void>();
   private analysisCache?: ContentAnalysis;
