@@ -222,7 +222,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       display: flex;
       align-items: center;
       gap: 4px;
-      height: 32px;
+      height: 27px;
       padding: 0 8px;
       background: var(--vsc-sidebar-background, #252526);
       border-bottom: 1px solid var(--vsc-border, #3c3c3c);
@@ -460,7 +460,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     .fb-mode-badge {
       flex-shrink: 0;
       display: inline-flex; align-items: center; justify-content: center;
-      height: 16px; padding: 0 5px;
+      height: 15px; padding: 0 5px;
       background: color-mix(in srgb, #007fd4 20%, transparent);
       border: 1px solid rgba(0,127,212,0.4);
       border-radius: 2px;
@@ -472,7 +472,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
     .fb-tag {
       flex-shrink: 0;
       display: inline-flex; align-items: center; gap: 3px;
-      height: 20px; padding: 0 4px 0 6px;
+      height: 18px; padding: 0 4px 0 6px;
       background: #094771;
       border: 1px solid rgba(0,127,212,0.4);
       border-radius: 2px; color: #ccddff; font-size: 11.5px;
@@ -513,7 +513,7 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
 
     .fb-chip {
       display: inline-flex; align-items: center; gap: 3px;
-      height: 20px; padding: 0 7px;
+      height: 18px; padding: 0 7px;
       background: transparent; border: 1px solid var(--vsc-border, #3c3c3c);
       border-radius: 2px; cursor: pointer;
       color: var(--vsc-foreground-dim, #858585);
@@ -532,15 +532,6 @@ const DEFAULT_FILE_CATEGORIES: FileCategory[] = [
       color: var(--vsc-foreground-dim, #858585); white-space: nowrap;
     }
     .fb-count-sep { opacity: 0.4; margin: 0 1px; }
-
-    /* ── Compact mode ────────────────────────────────────── */
-    .filter-bar--compact {
-      .fb-trigger  { height: 20px; font-size: 11.5px; }
-      .fb-chip     { height: 18px; }
-      .fb-tag      { height: 18px; font-size: 11px; }
-      .fb-item     { height: 22px; }
-      .fb-mode-row { height: 26px; }
-    }
 
     /* ── Light theme ─────────────────────────────────────── */
     :host-context(.vscode-light) {
