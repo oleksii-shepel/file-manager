@@ -46,76 +46,10 @@ impl CommandExecutor {
             Command::ListDrives { .. } => {
                 Self::list_drives()
             }
+            Command::GetOsInfo { .. } => {
+                Self::get_os_info()
+            }
         };
-    #[cfg(target_os = "windows")]
-    fn list_drives() -> anyhow::Result<ResponseData> {
-        use std::ptr;
-        use winapi::um::fileapi::GetDriveTypeW;
-        use winapi::um::fileapi::GetDiskFreeSpaceExW;
-        use winapi::um::winbase::DRIVE_FIXED;
-        use winapi::um::winbase::DRIVE_REMOVABLE;
-        use winapi::um::winbase::DRIVE_CDROM;
-        use winapi::um::winbase::DRIVE_RAMDISK;
-        use winapi::um::winbase::DRIVE_REMOTE;
-        use winapi::um::fileapi::GetLogicalDriveStringsW;
-        use widestring::U16CString;
-
-        let mut buffer = [0u16; 256];
-        let len = unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
-        let mut drives = Vec::new();
-        let mut i = 0;
-        while i < len as usize {
-            let start = i;
-            while i < len as usize && buffer[i] != 0 {
-                i += 1;
-            }
-            if start == i {
-                i += 1;
-                continue;
-            }
-            let drive = U16CString::from_vec_with_nul(&buffer[start..=i]).unwrap();
-            let drive_str = drive.to_string_lossy();
-            let drive_type = unsafe { GetDriveTypeW(drive.as_ptr()) };
-            let (total_space, free_space) = {
-                let mut free = 0u64;
-                let mut total = 0u64;
-                let mut _total_free = 0u64;
-                let ok = unsafe {
-                    GetDiskFreeSpaceExW(
-                        drive.as_ptr(),
-                        &mut free,
-                        &mut total,
-                        &mut _total_free,
-                    )
-                };
-                if ok != 0 { (total, free) } else { (0, 0) }
-            };
-            let drive_type_str = match drive_type {
-                DRIVE_FIXED => "fixed",
-                DRIVE_REMOVABLE => "removable",
-                DRIVE_CDROM => "cdrom",
-                DRIVE_RAMDISK => "ramdisk",
-                DRIVE_REMOTE => "network",
-                _ => "unknown",
-            };
-            drives.push(crate::protocol::DriveInfo {
-                name: drive_str.trim_end_matches('\0').to_string(),
-                path: drive_str.trim_end_matches('\0').to_string(),
-                drive_type: drive_type_str.to_string(),
-                total_space,
-                free_space,
-                file_system: None,
-            });
-            i += 1;
-        }
-        Ok(ResponseData::DrivesList(crate::protocol::DrivesList { drives }))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn list_drives() -> anyhow::Result<ResponseData> {
-        // TODO: Implement for Unix/Linux/Mac
-        Ok(ResponseData::DrivesList(crate::protocol::DrivesList { drives: vec![] }))
-    }
 
         match result {
             Ok(data) => Response::Success {
@@ -135,13 +69,354 @@ impl CommandExecutor {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Path helpers
+    // -------------------------------------------------------------------------
+
+    /// On Windows, `std::fs::canonicalize` produces extended-length paths
+    /// (`\\?\C:\...`).  We strip that prefix so callers always receive a
+    /// normal drive-letter path such as `C:\Users\...`.
+    /// On non-Windows platforms this is a no-op.
+    fn normalize_path(path: &Path) -> String {
+        let s = path.to_string_lossy();
+
+        #[cfg(target_os = "windows")]
+        {
+            // Strip extended-length prefixes: \\?\ and \\?\UNC\
+            if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+                return format!(r"\\{}", stripped);
+            }
+            if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                return stripped.to_string();
+            }
+        }
+
+        s.into_owned()
+    }
+
+    /// Ensure an incoming path string is absolute.  On Windows this also
+    /// validates that the path already carries a drive letter (e.g. `C:\`).
+    /// If it does not, we prepend the system drive (typically `C:\`).
+    fn resolve_path(path: &str) -> String {
+        #[cfg(target_os = "windows")]
+        {
+            // Already has a drive letter (e.g. "C:\foo" or "C:/foo")
+            let chars: Vec<char> = path.chars().collect();
+            if chars.len() >= 2 && chars[1] == ':' {
+                return path.replace('/', r"\");
+            }
+            // No drive letter — prepend the system drive
+            let sys_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+            let rel = path.trim_start_matches(['/', '\\']);
+            return format!(r"{}\{}", sys_drive, rel);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        path.to_string()
+    }
+
+    // -------------------------------------------------------------------------
+    // OS Info
+    // -------------------------------------------------------------------------
+
+    fn get_os_info() -> Result<ResponseData> {
+        let os = std::env::consts::OS; // "windows", "linux", "macos", …
+        let arch = std::env::consts::ARCH; // "x86_64", "aarch64", …
+
+        let version = Self::os_version();
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        #[cfg(target_os = "windows")]
+        let system_drive = Some(
+            std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string()) + r"\",
+        );
+
+        #[cfg(not(target_os = "windows"))]
+        let system_drive = None;
+
+        Ok(ResponseData::OsInfo(OsInfo {
+            os: os.to_string(),
+            version,
+            arch: arch.to_string(),
+            hostname,
+            system_drive,
+        }))
+    }
+
+    /// Best-effort OS version string.
+    fn os_version() -> String {
+        #[cfg(target_os = "windows")]
+        {
+            // Read from the registry: HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion
+            use winreg::enums::HKEY_LOCAL_MACHINE;
+            use winreg::RegKey;
+            if let Ok(hklm) = RegKey::predef(HKEY_LOCAL_MACHINE)
+                .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+            {
+                let major: u32 = hklm.get_value("CurrentMajorVersionNumber").unwrap_or(0);
+                let minor: u32 = hklm.get_value("CurrentMinorVersionNumber").unwrap_or(0);
+                let build: String = hklm
+                    .get_value("CurrentBuildNumber")
+                    .unwrap_or_else(|_| "0".to_string());
+                return format!("{}.{}.{}", major, minor, build);
+            }
+            "unknown".to_string()
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Try /etc/os-release first, fall back to uname
+            if let Ok(content) = fs::read_to_string("/etc/os-release") {
+                for line in content.lines() {
+                    if let Some(val) = line.strip_prefix("PRETTY_NAME=") {
+                        return val.trim_matches('"').to_string();
+                    }
+                }
+            }
+            Self::uname_version()
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // sw_vers -productVersion
+            if let Ok(out) = std::process::Command::new("sw_vers")
+                .arg("-productVersion")
+                .output()
+            {
+                return String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
+            Self::uname_version()
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            Self::uname_version()
+        }
+    }
+
+    #[cfg(unix)]
+    fn uname_version() -> String {
+        if let Ok(out) = std::process::Command::new("uname").arg("-r").output() {
+            return String::from_utf8_lossy(&out.stdout).trim().to_string();
+        }
+        "unknown".to_string()
+    }
+
+    #[cfg(not(unix))]
+    fn uname_version() -> String {
+        "unknown".to_string()
+    }
+
+    // -------------------------------------------------------------------------
+    // List Drives
+    // -------------------------------------------------------------------------
+
+    #[cfg(target_os = "windows")]
+    fn list_drives() -> Result<ResponseData> {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+        use winapi::um::fileapi::{
+            GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW,
+        };
+        use winapi::um::winbase::{
+            DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE,
+        };
+
+        let mut buffer = vec![0u16; 256];
+        let len = unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
+
+        if len == 0 {
+            anyhow::bail!("GetLogicalDriveStringsW failed");
+        }
+
+        let mut drives = Vec::new();
+        let mut offset = 0usize;
+
+        while offset < len as usize {
+            let end = buffer[offset..]
+                .iter()
+                .position(|&c| c == 0)
+                .map(|p| offset + p)
+                .unwrap_or(len as usize);
+
+            if end == offset {
+                break; // double-null terminator
+            }
+
+            let drive_wide = &buffer[offset..end];
+            let drive_path = OsString::from_wide(drive_wide)
+                .to_string_lossy()
+                .into_owned();
+
+            // drive_path is e.g. "C:\" — exactly what we want to expose.
+            let drive_wide_nul: Vec<u16> = buffer[offset..=end].to_vec(); // includes NUL
+
+            let drive_type = unsafe { GetDriveTypeW(drive_wide_nul.as_ptr()) };
+
+            let (total_space, free_space) = unsafe {
+                let mut free = 0u64;
+                let mut total = 0u64;
+                let mut total_free = 0u64;
+                let ok = GetDiskFreeSpaceExW(
+                    drive_wide_nul.as_ptr(),
+                    &mut free as *mut u64 as *mut _,
+                    &mut total as *mut u64 as *mut _,
+                    &mut total_free as *mut u64 as *mut _,
+                );
+                if ok != 0 { (total, free) } else { (0, 0) }
+            };
+
+            let drive_type_str = match drive_type {
+                DRIVE_FIXED => "fixed",
+                DRIVE_REMOVABLE => "removable",
+                DRIVE_CDROM => "cdrom",
+                DRIVE_RAMDISK => "ramdisk",
+                DRIVE_REMOTE => "network",
+                _ => "unknown",
+            }
+            .to_string();
+
+            // Name is the drive letter prefix, e.g. "C:"
+            let name = drive_path.trim_end_matches('\\').to_string();
+
+            drives.push(DriveInfo {
+                name,
+                path: drive_path, // always has trailing backslash + drive letter
+                drive_type: drive_type_str,
+                total_space,
+                free_space,
+                file_system: None,
+            });
+
+            offset = end + 1;
+        }
+
+        Ok(ResponseData::DrivesList(DrivesList { drives }))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn list_drives() -> Result<ResponseData> {
+        // Parse /proc/mounts on Linux; fall back to a single "/" root on macOS/other.
+        let drives = Self::unix_mounts();
+        Ok(ResponseData::DrivesList(DrivesList { drives }))
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    fn unix_mounts() -> Vec<DriveInfo> {
+        let content = match fs::read_to_string("/proc/mounts") {
+            Ok(c) => c,
+            Err(_) => return vec![Self::unix_root_drive()],
+        };
+
+        let mut drives = Vec::new();
+
+        for line in content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 6 {
+                continue;
+            }
+            let device = parts[0];
+            let mount_point = parts[1];
+            let fs_type = parts[2];
+
+            // Skip pseudo filesystems
+            if matches!(
+                fs_type,
+                "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs"
+                    | "cgroup" | "cgroup2" | "pstore" | "bpf" | "tracefs"
+                    | "hugetlbfs" | "mqueue" | "debugfs" | "securityfs"
+                    | "fusectl" | "configfs" | "efivarfs" | "overlay"
+                    | "autofs" | "ramfs"
+            ) {
+                continue;
+            }
+
+            let (total_space, free_space) = Self::statvfs_space(mount_point);
+
+            let name = if device.starts_with('/') {
+                Path::new(device)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| device.to_string())
+            } else {
+                device.to_string()
+            };
+
+            drives.push(DriveInfo {
+                name,
+                path: mount_point.to_string(),
+                drive_type: if fs_type == "vfat" || fs_type == "ntfs" {
+                    "removable"
+                } else if device.starts_with("/dev/sr") {
+                    "cdrom"
+                } else {
+                    "fixed"
+                }
+                .to_string(),
+                total_space,
+                free_space,
+                file_system: Some(fs_type.to_string()),
+            });
+        }
+
+        if drives.is_empty() {
+            drives.push(Self::unix_root_drive());
+        }
+
+        drives
+    }
+
+    #[cfg(all(unix, not(target_os = "linux")))]
+    fn unix_mounts() -> Vec<DriveInfo> {
+        // macOS / other Unix: just report root for now.
+        vec![Self::unix_root_drive()]
+    }
+
+    #[cfg(unix)]
+    fn unix_root_drive() -> DriveInfo {
+        let (total, free) = Self::statvfs_space("/");
+        DriveInfo {
+            name: "root".to_string(),
+            path: "/".to_string(),
+            drive_type: "fixed".to_string(),
+            total_space: total,
+            free_space: free,
+            file_system: None,
+        }
+    }
+
+    /// Call `statvfs(2)` to get total/free bytes for a mount point.
+    #[cfg(unix)]
+    fn statvfs_space(path: &str) -> (u64, u64) {
+        use std::mem::MaybeUninit;
+        unsafe {
+            let c_path = std::ffi::CString::new(path).unwrap();
+            let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+            if libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) == 0 {
+                let s = stat.assume_init();
+                let total = s.f_blocks * s.f_frsize;
+                let free = s.f_bavail * s.f_frsize;
+                (total, free)
+            } else {
+                (0, 0)
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Directory / File operations
+    // -------------------------------------------------------------------------
+
     fn list_directory(path: &str, show_hidden: bool) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
-        
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
+
         if !path_buf.exists() {
             anyhow::bail!("Path does not exist: {}", path);
         }
-        
+
         if !path_buf.is_dir() {
             anyhow::bail!("Path is not a directory: {}", path);
         }
@@ -153,52 +428,44 @@ impl CommandExecutor {
             let entry = entry?;
             let metadata = entry.metadata()?;
             let name = entry.file_name().to_string_lossy().to_string();
-            
-            // Skip hidden files if requested
-            if !show_hidden && name.starts_with('.') {
+
+            if !show_hidden && Self::is_hidden(&name, &metadata) {
                 continue;
             }
 
-            let file_info = Self::metadata_to_file_info(
-                &name,
-                &entry.path(),
-                &metadata,
-            )?;
-            
+            let file_info = Self::metadata_to_file_info(&name, &entry.path(), &metadata)?;
             total_size += file_info.size;
             entries.push(file_info);
         }
 
-        // Sort entries using a strict total order to avoid comparator panics:
-        // directory first, then symlink, then file; finally case-insensitive name.
-        entries.sort_by_key(|entry| {
-            let type_rank = match entry.file_type {
+        entries.sort_by_key(|e| {
+            let type_rank = match e.file_type {
                 FileType::Directory => 0u8,
                 FileType::Symlink => 1u8,
                 FileType::File => 2u8,
             };
-
-            (type_rank, entry.name.to_lowercase(), entry.name.clone())
+            (type_rank, e.name.to_lowercase(), e.name.clone())
         });
 
         Ok(ResponseData::DirectoryListing(DirectoryListing {
-            path: path.to_string(),
+            path,
             entries,
             total_size,
         }))
     }
 
     fn read_file(path: &str, encoding: Option<&str>) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
-        
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
+
         if !path_buf.exists() {
             anyhow::bail!("File does not exist: {}", path);
         }
 
         let metadata = fs::metadata(path_buf)?;
         let size = metadata.len();
-
         let encoding = encoding.unwrap_or("utf8");
+
         let content = match encoding {
             "utf8" => fs::read_to_string(path_buf)?,
             "base64" => {
@@ -209,7 +476,7 @@ impl CommandExecutor {
         };
 
         Ok(ResponseData::FileContent(FileContent {
-            path: path.to_string(),
+            path,
             content,
             encoding: encoding.to_string(),
             size,
@@ -217,7 +484,8 @@ impl CommandExecutor {
     }
 
     fn write_file(path: &str, content: &str, encoding: Option<&str>) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
         let encoding = encoding.unwrap_or("utf8");
 
         match encoding {
@@ -233,13 +501,14 @@ impl CommandExecutor {
         Ok(ResponseData::OperationResult(OperationResult {
             success: true,
             message: Some(format!("File written successfully: {}", path)),
-            affected_paths: Some(vec![path.to_string()]),
+            affected_paths: Some(vec![path]),
         }))
     }
 
     fn delete_file(path: &str, recursive: bool) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
-        
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
+
         if !path_buf.exists() {
             anyhow::bail!("Path does not exist: {}", path);
         }
@@ -257,12 +526,13 @@ impl CommandExecutor {
         Ok(ResponseData::OperationResult(OperationResult {
             success: true,
             message: Some(format!("Deleted: {}", path)),
-            affected_paths: Some(vec![path.to_string()]),
+            affected_paths: Some(vec![path]),
         }))
     }
 
     fn create_directory(path: &str, recursive: bool) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
 
         if recursive {
             fs::create_dir_all(path_buf)?;
@@ -273,30 +543,32 @@ impl CommandExecutor {
         Ok(ResponseData::OperationResult(OperationResult {
             success: true,
             message: Some(format!("Directory created: {}", path)),
-            affected_paths: Some(vec![path.to_string()]),
+            affected_paths: Some(vec![path]),
         }))
     }
 
     fn move_file(source: &str, destination: &str) -> Result<ResponseData> {
-        let source_buf = Path::new(source);
-        let dest_buf = Path::new(destination);
+        let source = Self::resolve_path(source);
+        let destination = Self::resolve_path(destination);
 
-        if !source_buf.exists() {
+        if !Path::new(&source).exists() {
             anyhow::bail!("Source does not exist: {}", source);
         }
 
-        fs::rename(source_buf, dest_buf)?;
+        fs::rename(&source, &destination)?;
 
         Ok(ResponseData::OperationResult(OperationResult {
             success: true,
             message: Some(format!("Moved from {} to {}", source, destination)),
-            affected_paths: Some(vec![source.to_string(), destination.to_string()]),
+            affected_paths: Some(vec![source, destination]),
         }))
     }
 
     fn copy_file(source: &str, destination: &str, recursive: bool) -> Result<ResponseData> {
-        let source_buf = Path::new(source);
-        let dest_buf = Path::new(destination);
+        let source = Self::resolve_path(source);
+        let destination = Self::resolve_path(destination);
+        let source_buf = Path::new(&source);
+        let dest_buf = Path::new(&destination);
 
         if !source_buf.exists() {
             anyhow::bail!("Source does not exist: {}", source);
@@ -314,19 +586,17 @@ impl CommandExecutor {
         Ok(ResponseData::OperationResult(OperationResult {
             success: true,
             message: Some(format!("Copied from {} to {}", source, destination)),
-            affected_paths: Some(vec![destination.to_string()]),
+            affected_paths: Some(vec![destination]),
         }))
     }
 
     fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         fs::create_dir_all(dst)?;
-        
         for entry in fs::read_dir(src)? {
             let entry = entry?;
             let ty = entry.file_type()?;
             let src_path = entry.path();
             let dst_path = dst.join(entry.file_name());
-
             if ty.is_dir() {
                 Self::copy_dir_recursive(&src_path, &dst_path)?;
             } else {
@@ -337,8 +607,9 @@ impl CommandExecutor {
     }
 
     fn get_file_info(path: &str) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
-        
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
+
         if !path_buf.exists() {
             anyhow::bail!("Path does not exist: {}", path);
         }
@@ -351,13 +622,13 @@ impl CommandExecutor {
             .to_string();
 
         let file_info = Self::metadata_to_file_info(&name, path_buf, &metadata)?;
-
         Ok(ResponseData::FileInfo(file_info))
     }
 
     fn search_files(path: &str, pattern: &str, recursive: bool) -> Result<ResponseData> {
-        let path_buf = Path::new(path);
-        
+        let path = Self::resolve_path(path);
+        let path_buf = Path::new(&path);
+
         if !path_buf.exists() {
             anyhow::bail!("Path does not exist: {}", path);
         }
@@ -373,14 +644,10 @@ impl CommandExecutor {
 
         for entry in walker.into_iter().filter_map(|e| e.ok()) {
             let file_name = entry.file_name().to_string_lossy();
-            
             if file_name.to_lowercase().contains(&pattern_lower) {
                 if let Ok(metadata) = entry.metadata() {
-                    let file_info = Self::metadata_to_file_info(
-                        &file_name,
-                        entry.path(),
-                        &metadata,
-                    )?;
+                    let file_info =
+                        Self::metadata_to_file_info(&file_name, entry.path(), &metadata)?;
                     matches.push(file_info);
                 }
             }
@@ -389,11 +656,15 @@ impl CommandExecutor {
         let total_matches = matches.len();
 
         Ok(ResponseData::SearchResult(SearchResult {
-            path: path.to_string(),
+            path,
             matches,
             total_matches,
         }))
     }
+
+    // -------------------------------------------------------------------------
+    // Metadata helpers
+    // -------------------------------------------------------------------------
 
     fn metadata_to_file_info(
         name: &str,
@@ -408,32 +679,30 @@ impl CommandExecutor {
             FileType::File
         };
 
-        // Get timestamps
-        let created = metadata.created()
+        let created = metadata
+            .created()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let modified = metadata.modified()
+        let modified = metadata
+            .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let accessed = metadata.accessed()
+        let accessed = metadata
+            .accessed()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        // Get permissions
         #[cfg(unix)]
-        let permissions = {
-            let mode = metadata.permissions().mode();
-            format!("{:o}", mode & 0o777)
-        };
-        
+        let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
+
         #[cfg(not(unix))]
         let permissions = if metadata.permissions().readonly() {
             "r--".to_string()
@@ -441,11 +710,14 @@ impl CommandExecutor {
             "rw-".to_string()
         };
 
-        let is_hidden = name.starts_with('.');
+        let is_hidden = Self::is_hidden(name, metadata);
+
+        // Normalise path so Windows never returns \\?\ prefixes
+        let path_str = Self::normalize_path(path);
 
         Ok(FileInfo {
             name: name.to_string(),
-            path: path.to_string_lossy().to_string(),
+            path: path_str,
             file_type,
             size: metadata.len(),
             created,
@@ -455,47 +727,61 @@ impl CommandExecutor {
             is_hidden,
         })
     }
+
+    /// A file is hidden when its name starts with `.` (Unix convention) or
+    /// when the Windows hidden attribute is set.
+    fn is_hidden(name: &str, _metadata: &fs::Metadata) -> bool {
+        if name.starts_with('.') {
+            return true;
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::fs::MetadataExt;
+            // FILE_ATTRIBUTE_HIDDEN = 0x2
+            if _metadata.file_attributes() & 0x2 != 0 {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
-// Note: base64 crate is not in dependencies, need to add it
-// For now, I'll provide a simple implementation
+// ============================================================================
+// Minimal base64 implementation (replace with the `base64` crate in production)
+// ============================================================================
 mod base64 {
-    use std::io::{Error, ErrorKind};
+    const CHARS: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     pub fn encode(data: &[u8]) -> String {
-        let mut result = String::new();
+        let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
         for chunk in data.chunks(3) {
-            let mut buf = [0u8; 3];
-            for (i, &byte) in chunk.iter().enumerate() {
-                buf[i] = byte;
-            }
-            
-            let b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            let i1 = (buf[0] >> 2) as usize;
-            let i2 = (((buf[0] & 0x03) << 4) | (buf[1] >> 4)) as usize;
-            let i3 = (((buf[1] & 0x0f) << 2) | (buf[2] >> 6)) as usize;
-            let i4 = (buf[2] & 0x3f) as usize;
-            
-            result.push(b64_chars.chars().nth(i1).unwrap());
-            result.push(b64_chars.chars().nth(i2).unwrap());
-            
-            if chunk.len() > 1 {
-                result.push(b64_chars.chars().nth(i3).unwrap());
+            let b0 = chunk[0];
+            let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+            let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+
+            result.push(CHARS[(b0 >> 2) as usize] as char);
+            result.push(CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+            result.push(if chunk.len() > 1 {
+                CHARS[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char
             } else {
-                result.push('=');
-            }
-            
-            if chunk.len() > 2 {
-                result.push(b64_chars.chars().nth(i4).unwrap());
+                '='
+            });
+            result.push(if chunk.len() > 2 {
+                CHARS[(b2 & 0x3f) as usize] as char
             } else {
-                result.push('=');
-            }
+                '='
+            });
         }
         result
     }
 
-    pub fn decode(_s: &str) -> Result<Vec<u8>, Error> {
-        // Simplified base64 decoder
-        Err(Error::new(ErrorKind::Other, "Not implemented - use base64 crate"))
+    pub fn decode(_s: &str) -> Result<Vec<u8>, std::io::Error> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "base64::decode not implemented — add the `base64` crate",
+        ))
     }
 }

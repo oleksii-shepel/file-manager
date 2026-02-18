@@ -6,7 +6,7 @@
  * - Item Filter
  */
 
-// Re-export base protocol types
+// Re-export everything from the base protocol so consumers only need one import.
 export * from '../shared-types/protocol';
 
 // ============================================================================
@@ -23,7 +23,8 @@ export interface TabInfo {
 }
 
 export interface PaneState {
-  id: string; // 'left' | 'right'
+  /** e.g. 'left' | 'right' */
+  id: string;
   tabs: TabInfo[];
   activeTabId: string;
 }
@@ -65,12 +66,22 @@ export enum FilterType {
 export interface FilterCriteria {
   type: FilterType;
   value: string;
-  operator?: 'equals' | 'contains' | 'startsWith' | 'endsWith' | 'gt' | 'lt' | 'gte' | 'lte';
+  operator?:
+    | 'equals'
+    | 'contains'
+    | 'startsWith'
+    | 'endsWith'
+    | 'gt'
+    | 'lt'
+    | 'gte'
+    | 'lte';
 }
 
 export interface FilterQuery {
-  text?: string; // Simple text search
-  criteria?: FilterCriteria[]; // Advanced filters
+  /** Simple text search across file names */
+  text?: string;
+  /** Advanced multi-criteria filters */
+  criteria?: FilterCriteria[];
   caseSensitive?: boolean;
 }
 
@@ -84,12 +95,12 @@ export enum EnhancedCommandType {
   LOAD_WORKSPACE = 'LOAD_WORKSPACE',
   DELETE_WORKSPACE = 'DELETE_WORKSPACE',
   LIST_WORKSPACES = 'LIST_WORKSPACES',
-  
+
   // Tab commands
   SAVE_TAB_STATE = 'SAVE_TAB_STATE',
   LOAD_TAB_STATE = 'LOAD_TAB_STATE',
-  
-  // Filter commands (client-side mostly, but might need server for complex patterns)
+
+  // Filter commands (client-side mostly, but may need server for complex patterns)
   APPLY_FILTER = 'APPLY_FILTER',
 }
 

@@ -15,12 +15,19 @@ pub enum Command {
         #[serde(default)]
         show_hidden: bool,
     },
+
     #[serde(rename = "LIST_DRIVES")]
     ListDrives {
         id: String,
         timestamp: i64,
     },
-    
+
+    #[serde(rename = "GET_OS_INFO")]
+    GetOsInfo {
+        id: String,
+        timestamp: i64,
+    },
+
     #[serde(rename = "READ_FILE")]
     ReadFile {
         id: String,
@@ -29,7 +36,7 @@ pub enum Command {
         #[serde(default)]
         encoding: Option<String>,
     },
-    
+
     #[serde(rename = "WRITE_FILE")]
     WriteFile {
         id: String,
@@ -39,7 +46,7 @@ pub enum Command {
         #[serde(default)]
         encoding: Option<String>,
     },
-    
+
     #[serde(rename = "DELETE_FILE")]
     DeleteFile {
         id: String,
@@ -48,7 +55,7 @@ pub enum Command {
         #[serde(default)]
         recursive: bool,
     },
-    
+
     #[serde(rename = "CREATE_DIRECTORY")]
     CreateDirectory {
         id: String,
@@ -57,7 +64,7 @@ pub enum Command {
         #[serde(default)]
         recursive: bool,
     },
-    
+
     #[serde(rename = "MOVE_FILE")]
     MoveFile {
         id: String,
@@ -65,7 +72,7 @@ pub enum Command {
         source: String,
         destination: String,
     },
-    
+
     #[serde(rename = "COPY_FILE")]
     CopyFile {
         id: String,
@@ -75,14 +82,14 @@ pub enum Command {
         #[serde(default)]
         recursive: bool,
     },
-    
+
     #[serde(rename = "GET_FILE_INFO")]
     GetFileInfo {
         id: String,
         timestamp: i64,
         path: String,
     },
-    
+
     #[serde(rename = "SEARCH_FILES")]
     SearchFiles {
         id: String,
@@ -98,16 +105,8 @@ impl Command {
     pub fn id(&self) -> &str {
         match self {
             Command::ListDirectory { id, .. } => id,
-            Command::ReadFile { id, .. } => id,
-            Command::WriteFile { id, .. } => id,
-            Command::DeleteFile { id, .. } => id,
-            Command::CreateDirectory { id, .. } => id,
-            Command::MoveFile { id, .. } => id,
-            Command::CopyFile { id, .. } => id,
-            Command::GetFileInfo { id, .. } => id,
-            Command::SearchFiles { id, .. } => id,
             Command::ListDrives { id, .. } => id,
-            Command::ListDirectory { id, .. } => id,
+            Command::GetOsInfo { id, .. } => id,
             Command::ReadFile { id, .. } => id,
             Command::WriteFile { id, .. } => id,
             Command::DeleteFile { id, .. } => id,
@@ -116,6 +115,7 @@ impl Command {
             Command::CopyFile { id, .. } => id,
             Command::GetFileInfo { id, .. } => id,
             Command::SearchFiles { id, .. } => id,
+        }
     }
 }
 
@@ -132,7 +132,7 @@ pub enum Response {
         timestamp: i64,
         data: ResponseData,
     },
-    
+
     #[serde(rename = "ERROR")]
     Error {
         command_id: String,
@@ -158,12 +158,41 @@ pub enum ResponseData {
     OperationResult(OperationResult),
     SearchResult(SearchResult),
     DrivesList(DrivesList),
+    OsInfo(OsInfo),
 }
+
+// ============================================================================
+// OS Info
+// ============================================================================
+
+/// High-level information about the host operating system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OsInfo {
+    /// `"windows"`, `"linux"`, `"macos"`, or `"unknown"`
+    pub os: String,
+    /// Human-readable version string (e.g. `"10.0.22621"` or `"22.04"`)
+    pub version: String,
+    /// Architecture string (e.g. `"x86_64"`, `"aarch64"`)
+    pub arch: String,
+    /// Hostname of the machine
+    pub hostname: String,
+    /// On Windows, the system drive root that all absolute paths are relative to
+    /// (e.g. `"C:\\"`) — `None` on non-Windows systems.
+    pub system_drive: Option<String>,
+}
+
+// ============================================================================
+// Drives
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DriveInfo {
-    pub name: String, // e.g. 'C:'
-    pub path: String, // e.g. 'C:\\'
-    pub drive_type: String, // e.g. 'fixed', 'removable', etc.
+    /// Display name, e.g. `"C:"` on Windows or `"sda1"` on Linux
+    pub name: String,
+    /// Mount / root path — always includes drive letter on Windows, e.g. `"C:\\"`
+    pub path: String,
+    /// `"fixed"`, `"removable"`, `"cdrom"`, `"network"`, `"ramdisk"`, or `"unknown"`
+    pub drive_type: String,
     pub total_space: u64,
     pub free_space: u64,
     pub file_system: Option<String>,
@@ -175,7 +204,7 @@ pub struct DrivesList {
 }
 
 // ============================================================================
-// Data Types
+// File-system Data Types
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +218,7 @@ pub enum FileType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
     pub name: String,
+    /// Absolute path — always includes drive letter on Windows
     pub path: String,
     #[serde(rename = "type")]
     pub file_type: FileType,
@@ -241,16 +271,16 @@ pub struct SearchResult {
 pub enum WebSocketMessage {
     #[serde(rename = "COMMAND")]
     Command { payload: Command },
-    
+
     #[serde(rename = "RESPONSE")]
     Response { payload: Response },
-    
+
     #[serde(rename = "PING")]
     Ping,
-    
+
     #[serde(rename = "PONG")]
     Pong,
-    
+
     #[serde(rename = "AUTH")]
     Auth { payload: AuthPayload },
 }

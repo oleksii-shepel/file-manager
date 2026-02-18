@@ -1,10 +1,15 @@
-
 import { Injectable } from '@angular/core';
-import { Observable, Subject, from } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import {
   Command,
-  Response,
   CommandType,
+  Response,
+  ResponseStatus,
+  MessageType,
+  WebSocketMessage,
+  // Command shapes
+  GetOSInfoCommand,
+  ListDrivesCommand,
   ListDirectoryCommand,
   ReadFileCommand,
   WriteFileCommand,
@@ -14,45 +19,45 @@ import {
   CopyFileCommand,
   GetFileInfoCommand,
   SearchFilesCommand,
+  // Response data shapes
+  OSInfoResponse,
+  DrivesList,
+  DriveInfo,
   DirectoryListing,
   FileContent,
   FileInfo,
   OperationResult,
   SearchResult,
-  WebSocketMessage,
-  MessageType,
 } from '@shared/protocol';
-import { ListDrivesCommand, DriveInfo } from '@shared/protocol-enhanced';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class ApiService {
-  private serverUrl = 'http://localhost:3030';
-  private wsUrl = 'ws://localhost:3030/ws';
+  private readonly serverUrl = 'http://localhost:3030';
+  private readonly wsUrl = 'ws://localhost:3030/ws';
+
   private ws: WebSocket | null = null;
-  private wsMessages$ = new Subject<Response>();
+  private readonly wsMessages$ = new Subject<Response>();
   private commandCounter = 0;
 
-  constructor() {}
+  // -------------------------------------------------------------------------
+  // WebSocket
+  // -------------------------------------------------------------------------
 
-  /**
-   * Initialize WebSocket connection for real-time communication
-   */
+  /** Open (or reuse) a WebSocket connection and stream incoming responses. */
   connectWebSocket(): Observable<Response> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
       return this.wsMessages$.asObservable();
     }
 
     this.ws = new WebSocket(this.wsUrl);
 
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-    };
+    this.ws.onopen = () => console.log('WebSocket connected');
 
     this.ws.onmessage = (event) => {
       try {
-        const message: WebSocketMessage = JSON.parse(event.data);
+        const message = JSON.parse(event.data as string) as WebSocketMessage;
         if (message.type === MessageType.RESPONSE) {
           this.wsMessages$.next(message.payload as Response);
         }
@@ -61,9 +66,7 @@ export class ApiService {
       }
     };
 
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+    this.ws.onerror = (error) => console.error('WebSocket error:', error);
 
     this.ws.onclose = () => {
       console.log('WebSocket disconnected');
@@ -73,11 +76,15 @@ export class ApiService {
     return this.wsMessages$.asObservable();
   }
 
-  /**
-   * Send command via WebSocket
-   */
+  /** Close the WebSocket connection. */
+  disconnectWebSocket(): void {
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  /** Send a command over the open WebSocket. */
   private sendWebSocketCommand(command: Command): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not connected');
     }
 
@@ -89,272 +96,193 @@ export class ApiService {
     this.ws.send(JSON.stringify(message));
   }
 
-  /**
-   * Send command via HTTP POST
-   */
-  private async sendHttpCommand(command: Command): Promise<Response> {
-    const response = await fetch(`${this.serverUrl}/api/command`, {
+  // -------------------------------------------------------------------------
+  // HTTP
+  // -------------------------------------------------------------------------
+
+  /** Send a command via HTTP POST and return the parsed response. */
+  private async sendHttpCommand<T = unknown>(command: Command): Promise<Response<T>> {
+    const res = await fetch(`${this.serverUrl}/api/command`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(command),
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
     }
 
-    return await response.json();
+    return res.json() as Promise<Response<T>>;
   }
 
-  /**
-   * Generate unique command ID
-   */
+  /** Throw if the response carries an error, otherwise return the data payload. */
+  private unwrap<T>(response: Response<T>): T {
+    if (response.status === ResponseStatus.ERROR) {
+      throw new Error(response.error.message);
+    }
+    return response.data;
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
   private generateCommandId(): string {
     return `cmd-${Date.now()}-${++this.commandCounter}`;
   }
 
-  /**
-   * List available drives (Windows only for now)
-   */
-  async listDrives(): Promise<DriveInfo[]> {
-    const command: ListDrivesCommand = {
-      type: CommandType.LIST_DRIVES,
+  private baseCommand<T extends CommandType>(type: T) {
+    return {
+      type,
       id: this.generateCommandId(),
       timestamp: Date.now(),
-    };
-
-    const response = await this.sendHttpCommand(command);
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-    // Response data is { drives: DriveInfo[] }
-    return response.data.drives;
+    } as const;
   }
-  
-  /**
-   * List directory contents
-   */
-  async listDirectory(path: string, showHidden: boolean = false): Promise<DirectoryListing> {
+
+  // -------------------------------------------------------------------------
+  // API Methods
+  // -------------------------------------------------------------------------
+
+  /** Retrieve host OS details (OS name, version, arch, hostname, system drive). */
+  async getOSInfo(): Promise<OSInfoResponse> {
+    const command: GetOSInfoCommand = this.baseCommand(CommandType.GET_OS_INFO);
+    const response = await this.sendHttpCommand<OSInfoResponse>(command);
+    return this.unwrap(response);
+  }
+
+  /** List available drives. Returns all mounts on Linux/macOS, lettered drives on Windows. */
+  async listDrives(): Promise<DriveInfo[]> {
+    const command: ListDrivesCommand = this.baseCommand(CommandType.LIST_DRIVES);
+    const response = await this.sendHttpCommand<DrivesList>(command);
+    return this.unwrap(response).drives;
+  }
+
+  /** List the contents of a directory. */
+  async listDirectory(
+    path: string,
+    showHidden = false,
+  ): Promise<DirectoryListing> {
     const command: ListDirectoryCommand = {
-      type: CommandType.LIST_DIRECTORY,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.LIST_DIRECTORY),
       path,
       showHidden,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as DirectoryListing;
+    const response = await this.sendHttpCommand<DirectoryListing>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Read file contents
-   */
-  async readFile(path: string, encoding: 'utf8' | 'base64' = 'utf8'): Promise<FileContent> {
+  /** Read a file's contents, optionally as base64. */
+  async readFile(
+    path: string,
+    encoding: 'utf8' | 'base64' = 'utf8',
+  ): Promise<FileContent> {
     const command: ReadFileCommand = {
-      type: CommandType.READ_FILE,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.READ_FILE),
       path,
       encoding,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as FileContent;
+    const response = await this.sendHttpCommand<FileContent>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Write file contents
-   */
+  /** Write content to a file. */
   async writeFile(
     path: string,
     content: string,
-    encoding: 'utf8' | 'base64' = 'utf8'
+    encoding: 'utf8' | 'base64' = 'utf8',
   ): Promise<OperationResult> {
     const command: WriteFileCommand = {
-      type: CommandType.WRITE_FILE,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.WRITE_FILE),
       path,
       content,
       encoding,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as OperationResult;
+    const response = await this.sendHttpCommand<OperationResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Delete file or directory
-   */
-  async deleteFile(path: string, recursive: boolean = false): Promise<OperationResult> {
+  /** Delete a file or directory. Pass `recursive: true` for non-empty directories. */
+  async deleteFile(path: string, recursive = false): Promise<OperationResult> {
     const command: DeleteFileCommand = {
-      type: CommandType.DELETE_FILE,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.DELETE_FILE),
       path,
       recursive,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as OperationResult;
+    const response = await this.sendHttpCommand<OperationResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Create directory
-   */
-  async createDirectory(path: string, recursive: boolean = true): Promise<OperationResult> {
+  /** Create a directory, optionally creating all parent directories. */
+  async createDirectory(path: string, recursive = true): Promise<OperationResult> {
     const command: CreateDirectoryCommand = {
-      type: CommandType.CREATE_DIRECTORY,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.CREATE_DIRECTORY),
       path,
       recursive,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as OperationResult;
+    const response = await this.sendHttpCommand<OperationResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Move file or directory
-   */
+  /** Move (rename) a file or directory. */
   async moveFile(source: string, destination: string): Promise<OperationResult> {
     const command: MoveFileCommand = {
-      type: CommandType.MOVE_FILE,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.MOVE_FILE),
       source,
       destination,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as OperationResult;
+    const response = await this.sendHttpCommand<OperationResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Copy file or directory
-   */
+  /** Copy a file or directory. Pass `recursive: true` for directories. */
   async copyFile(
     source: string,
     destination: string,
-    recursive: boolean = false
+    recursive = false,
   ): Promise<OperationResult> {
     const command: CopyFileCommand = {
-      type: CommandType.COPY_FILE,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.COPY_FILE),
       source,
       destination,
       recursive,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as OperationResult;
+    const response = await this.sendHttpCommand<OperationResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Get file information
-   */
+  /** Retrieve metadata for a single file or directory. */
   async getFileInfo(path: string): Promise<FileInfo> {
     const command: GetFileInfoCommand = {
-      type: CommandType.GET_FILE_INFO,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.GET_FILE_INFO),
       path,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as FileInfo;
+    const response = await this.sendHttpCommand<FileInfo>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Search for files
-   */
+  /** Search for files matching a pattern within a directory. */
   async searchFiles(
     path: string,
     pattern: string,
-    recursive: boolean = true
+    recursive = true,
   ): Promise<SearchResult> {
     const command: SearchFilesCommand = {
-      type: CommandType.SEARCH_FILES,
-      id: this.generateCommandId(),
-      timestamp: Date.now(),
+      ...this.baseCommand(CommandType.SEARCH_FILES),
       path,
       pattern,
       recursive,
     };
-
-    const response = await this.sendHttpCommand(command);
-    
-    if (response.status === 'ERROR') {
-      throw new Error(response.error.message);
-    }
-
-    return response.data as SearchResult;
+    const response = await this.sendHttpCommand<SearchResult>(command);
+    return this.unwrap(response);
   }
 
-  /**
-   * Check server health
-   */
+  /** Ping the server health endpoint. */
   async checkHealth(): Promise<boolean> {
     try {
       const response = await fetch(`${this.serverUrl}/health`);
       return response.ok;
     } catch {
       return false;
-    }
-  }
-
-  /**
-   * Disconnect WebSocket
-   */
-  disconnectWebSocket(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
     }
   }
 }

@@ -97,7 +97,7 @@ function buildSegments(p: string): PathSegment[] {
     const rest   = p.slice(3);                  // after "C:/"
     const parts  = rest ? rest.split('/').filter(Boolean) : [];
     const segs: PathSegment[] = [{
-      label: drive + '\\',
+      label: drive, // Show 'C:' only
       fullPath: drive + '/',
       isRoot: true,
       rootLabel: drive,
@@ -1032,12 +1032,20 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   // Lifecycle
   // ────────────────────────────────────────────────────────
 
-  ngOnInit(): void {
+  async ngOnInit(): Promise<void> {
     this.currentPath = normalizePath(this.initialPath);
-    this.isWin = isWindowsPath(this.currentPath);
+    // Default to false, will update after OS info
+    this.isWin = false;
+    try {
+      const osInfo = await this.apiService.getOSInfo();
+      // OSType.WINDOWS is 'WINDOWS' in protocol
+      this.isWin = osInfo.os === 'WINDOWS';
+    } catch (e) {
+      // fallback: guess from path
+      this.isWin = isWindowsPath(this.currentPath);
+    }
     this.rebuildSegments();
     this.loadPins();
-
     // Debounced autocomplete
     this.editChange$
       .pipe(debounceTime(240), distinctUntilChanged(), takeUntil(this.destroy$))

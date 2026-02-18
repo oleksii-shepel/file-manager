@@ -1,7 +1,57 @@
 /**
- * Shared protocol definitions between client and server
- * These types define the command structure and responses
+ * Shared protocol definitions between client and server.
+ * These types define the command structure and responses.
  */
+
+// ============================================================================
+// OS Info
+// ============================================================================
+
+export enum OSType {
+  WINDOWS = 'windows',
+  LINUX = 'linux',
+  MACOS = 'macos',
+  UNKNOWN = 'unknown',
+}
+
+export interface OSInfoResponse {
+  /** e.g. "windows", "linux", "macos" */
+  os: OSType;
+  /** e.g. "10.0.22621", "22.04 LTS", "14.3" */
+  version: string;
+  /** e.g. "x86_64", "aarch64" */
+  arch: string;
+  /** Machine hostname */
+  hostname: string;
+  /**
+   * On Windows: the system drive root that all absolute paths are
+   * relative to (e.g. "C:\\").  null on non-Windows platforms.
+   */
+  systemDrive: string | null;
+}
+
+// ============================================================================
+// Drives
+// ============================================================================
+
+export interface DriveInfo {
+  /** Short label, e.g. "C:" on Windows or "sda1" on Linux */
+  name: string;
+  /** Mount/root path — always includes drive letter on Windows, e.g. "C:\\" */
+  path: string;
+  /** "fixed" | "removable" | "network" | "cdrom" | "ramdisk" | "unknown" */
+  driveType: 'fixed' | 'removable' | 'network' | 'cdrom' | 'ramdisk' | 'unknown';
+  /** Total capacity in bytes */
+  totalSpace: number;
+  /** Free space in bytes */
+  freeSpace: number;
+  /** e.g. "NTFS", "ext4" */
+  fileSystem: string | null;
+}
+
+export interface DrivesList {
+  drives: DriveInfo[];
+}
 
 // ============================================================================
 // Commands (Client -> Server)
@@ -18,12 +68,18 @@ export enum CommandType {
   COPY_FILE = 'COPY_FILE',
   GET_FILE_INFO = 'GET_FILE_INFO',
   SEARCH_FILES = 'SEARCH_FILES',
+  GET_OS_INFO = 'GET_OS_INFO',
 }
 
 export interface BaseCommand {
-  id: string; // Unique command ID for tracking
+  /** Unique command ID for tracking */
+  id: string;
   type: CommandType;
   timestamp: number;
+}
+
+export interface GetOSInfoCommand extends BaseCommand {
+  type: CommandType.GET_OS_INFO;
 }
 
 export interface ListDrivesCommand extends BaseCommand {
@@ -52,13 +108,15 @@ export interface WriteFileCommand extends BaseCommand {
 export interface DeleteFileCommand extends BaseCommand {
   type: CommandType.DELETE_FILE;
   path: string;
-  recursive?: boolean; // For directories
+  /** Required when deleting a directory */
+  recursive?: boolean;
 }
 
 export interface CreateDirectoryCommand extends BaseCommand {
   type: CommandType.CREATE_DIRECTORY;
   path: string;
-  recursive?: boolean; // Create parent directories
+  /** Create parent directories as needed */
+  recursive?: boolean;
 }
 
 export interface MoveFileCommand extends BaseCommand {
@@ -71,7 +129,8 @@ export interface CopyFileCommand extends BaseCommand {
   type: CommandType.COPY_FILE;
   source: string;
   destination: string;
-  recursive?: boolean; // For directories
+  /** Required when copying a directory */
+  recursive?: boolean;
 }
 
 export interface GetFileInfoCommand extends BaseCommand {
@@ -86,18 +145,8 @@ export interface SearchFilesCommand extends BaseCommand {
   recursive?: boolean;
 }
 
-// DriveInfo type
-export interface DriveInfo {
-  name: string; // e.g. 'C:'
-  path: string; // e.g. 'C:\\'
-  type: 'fixed' | 'removable' | 'network' | 'cdrom' | 'ramdisk' | 'unknown';
-  totalSpace?: number; // bytes
-  freeSpace?: number; // bytes
-  fileSystem?: string; // e.g. 'NTFS'
-  isReady?: boolean;
-}
-
 export type Command =
+  | GetOSInfoCommand
   | ListDrivesCommand
   | ListDirectoryCommand
   | ReadFileCommand
@@ -119,12 +168,13 @@ export enum ResponseStatus {
 }
 
 export interface BaseResponse {
-  commandId: string; // References the command ID
+  /** References the originating command ID */
+  commandId: string;
   status: ResponseStatus;
   timestamp: number;
 }
 
-export interface SuccessResponse<T = any> extends BaseResponse {
+export interface SuccessResponse<T = unknown> extends BaseResponse {
   status: ResponseStatus.SUCCESS;
   data: T;
 }
@@ -134,14 +184,14 @@ export interface ErrorResponse extends BaseResponse {
   error: {
     code: string;
     message: string;
-    details?: any;
+    details?: unknown;
   };
 }
 
-export type Response<T = any> = SuccessResponse<T> | ErrorResponse;
+export type Response<T = unknown> = SuccessResponse<T> | ErrorResponse;
 
 // ============================================================================
-// Data Types
+// File-system Data Types
 // ============================================================================
 
 export enum FileType {
@@ -152,13 +202,19 @@ export enum FileType {
 
 export interface FileInfo {
   name: string;
+  /** Absolute path — always includes drive letter on Windows */
   path: string;
   type: FileType;
-  size: number; // In bytes
-  created: number; // Unix timestamp
-  modified: number; // Unix timestamp
-  accessed: number; // Unix timestamp
-  permissions: string; // e.g., "rwxr-xr-x"
+  /** Size in bytes */
+  size: number;
+  /** Unix timestamp */
+  created: number;
+  /** Unix timestamp */
+  modified: number;
+  /** Unix timestamp */
+  accessed: number;
+  /** e.g. "rwxr-xr-x" on Unix, "rw-" / "r--" on Windows */
+  permissions: string;
   isHidden: boolean;
 }
 
@@ -201,7 +257,7 @@ export enum MessageType {
 
 export interface WebSocketMessage {
   type: MessageType;
-  payload: any;
+  payload: unknown;
 }
 
 export interface AuthPayload {
