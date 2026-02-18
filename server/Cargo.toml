@@ -4,34 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Web framework
-axum = "0.7"
-tokio = { version = "1.35", features = ["full"] }
-tower = "0.4"
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1"
+chrono = "0.4"
+walkdir = "2"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
-
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# WebSocket
-tokio-tungstenite = "0.21"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.21"
 futures-util = "0.3"
 
-# File system operations
-walkdir = "2.4"
-chrono = "0.4"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Authentication (optional, for future use)
-uuid = { version = "1.6", features = ["v4", "serde"] }
-
-[dev-dependencies]
-tempfile = "3.8"
+# Platform-specific
+[target.'cfg(windows)'.dependencies]
+winreg = "0.50"
+winapi = { version = "0.3", features = ["fileapi", "winbase", "winnt"] }

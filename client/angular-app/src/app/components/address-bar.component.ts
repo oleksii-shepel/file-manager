@@ -1038,8 +1038,6 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
     this.isWin = false;
     try {
       const osInfo = await this.apiService.getOSInfo();
-      // OSType.WINDOWS is 'WINDOWS' in protocol
-      this.isWin = osInfo.os === 'WINDOWS';
     } catch (e) {
       // fallback: guess from path
       this.isWin = isWindowsPath(this.currentPath);

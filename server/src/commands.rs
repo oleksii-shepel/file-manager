@@ -8,6 +8,18 @@ use walkdir::WalkDir;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+// Import base64 Engine trait
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_LOCAL_MACHINE;
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
+
+// Move winapi imports inside the function where they're used
+// or conditionally import them only when needed
+
 pub struct CommandExecutor;
 
 impl CommandExecutor {
@@ -124,9 +136,27 @@ impl CommandExecutor {
         let arch = std::env::consts::ARCH; // "x86_64", "aarch64", …
 
         let version = Self::os_version();
-        let hostname = hostname::get()
-            .map(|h| h.to_string_lossy().into_owned())
+        
+        #[cfg(target_os = "windows")]
+        let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".to_string());
+
+        #[cfg(target_os = "linux")]
+        let hostname = std::fs::read_to_string("/etc/hostname")
+            .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "unknown".to_string());
+
+        #[cfg(target_os = "macos")]
+        let hostname = std::process::Command::new("scutil")
+            .arg("--get")
+            .arg("ComputerName")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        let hostname = "unknown".to_string();
 
         #[cfg(target_os = "windows")]
         let system_drive = Some(
@@ -150,17 +180,16 @@ impl CommandExecutor {
         #[cfg(target_os = "windows")]
         {
             // Read from the registry: HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion
-            use winreg::enums::HKEY_LOCAL_MACHINE;
-            use winreg::RegKey;
             if let Ok(hklm) = RegKey::predef(HKEY_LOCAL_MACHINE)
                 .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
             {
-                let major: u32 = hklm.get_value("CurrentMajorVersionNumber").unwrap_or(0);
-                let minor: u32 = hklm.get_value("CurrentMinorVersionNumber").unwrap_or(0);
-                let build: String = hklm
-                    .get_value("CurrentBuildNumber")
-                    .unwrap_or_else(|_| "0".to_string());
-                return format!("{}.{}.{}", major, minor, build);
+                let major: Result<u32, _> = hklm.get_value("CurrentMajorVersionNumber");
+                let minor: Result<u32, _> = hklm.get_value("CurrentMinorVersionNumber");
+                let build: Result<String, _> = hklm.get_value("CurrentBuildNumber");
+                
+                if let (Ok(major), Ok(minor), Ok(build)) = (major, minor, build) {
+                    return format!("{}.{}.{}", major, minor, build);
+                }
             }
             "unknown".to_string()
         }
@@ -204,17 +233,13 @@ impl CommandExecutor {
         "unknown".to_string()
     }
 
-    #[cfg(not(unix))]
-    fn uname_version() -> String {
-        "unknown".to_string()
-    }
-
     // -------------------------------------------------------------------------
     // List Drives
     // -------------------------------------------------------------------------
 
     #[cfg(target_os = "windows")]
     fn list_drives() -> Result<ResponseData> {
+        // Import winapi items here, inside the function
         use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
         use winapi::um::fileapi::{
@@ -242,7 +267,7 @@ impl CommandExecutor {
                 .unwrap_or(len as usize);
 
             if end == offset {
-                break; // double-null terminator
+                break;
             }
 
             let drive_wide = &buffer[offset..end];
@@ -250,8 +275,7 @@ impl CommandExecutor {
                 .to_string_lossy()
                 .into_owned();
 
-            // drive_path is e.g. "C:\" — exactly what we want to expose.
-            let drive_wide_nul: Vec<u16> = buffer[offset..=end].to_vec(); // includes NUL
+            let drive_wide_nul: Vec<u16> = buffer[offset..=end].to_vec();
 
             let drive_type = unsafe { GetDriveTypeW(drive_wide_nul.as_ptr()) };
 
@@ -278,12 +302,11 @@ impl CommandExecutor {
             }
             .to_string();
 
-            // Name is the drive letter prefix, e.g. "C:"
             let name = drive_path.trim_end_matches('\\').to_string();
 
             drives.push(DriveInfo {
                 name,
-                path: drive_path, // always has trailing backslash + drive letter
+                path: drive_path,
                 drive_type: drive_type_str,
                 total_space,
                 free_space,
@@ -470,7 +493,7 @@ impl CommandExecutor {
             "utf8" => fs::read_to_string(path_buf)?,
             "base64" => {
                 let bytes = fs::read(path_buf)?;
-                base64::encode(&bytes)
+                BASE64_ENGINE.encode(&bytes)  // Use the constant with Engine trait
             }
             _ => anyhow::bail!("Unsupported encoding: {}", encoding),
         };
@@ -491,7 +514,8 @@ impl CommandExecutor {
         match encoding {
             "utf8" => fs::write(path_buf, content)?,
             "base64" => {
-                let bytes = base64::decode(content)
+                let bytes = BASE64_ENGINE  // Use the constant with Engine trait
+                    .decode(content)
                     .context("Failed to decode base64 content")?;
                 fs::write(path_buf, bytes)?;
             }
@@ -673,7 +697,7 @@ impl CommandExecutor {
     ) -> Result<FileInfo> {
         let file_type = if metadata.is_dir() {
             FileType::Directory
-        } else if metadata.is_symlink() {
+        } else if metadata.file_type().is_symlink() {
             FileType::Symlink
         } else {
             FileType::File
@@ -745,43 +769,5 @@ impl CommandExecutor {
         }
 
         false
-    }
-}
-
-// ============================================================================
-// Minimal base64 implementation (replace with the `base64` crate in production)
-// ============================================================================
-mod base64 {
-    const CHARS: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    pub fn encode(data: &[u8]) -> String {
-        let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
-        for chunk in data.chunks(3) {
-            let b0 = chunk[0];
-            let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
-            let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
-
-            result.push(CHARS[(b0 >> 2) as usize] as char);
-            result.push(CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-            result.push(if chunk.len() > 1 {
-                CHARS[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char
-            } else {
-                '='
-            });
-            result.push(if chunk.len() > 2 {
-                CHARS[(b2 & 0x3f) as usize] as char
-            } else {
-                '='
-            });
-        }
-        result
-    }
-
-    pub fn decode(_s: &str) -> Result<Vec<u8>, std::io::Error> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "base64::decode not implemented — add the `base64` crate",
-        ))
     }
 }
