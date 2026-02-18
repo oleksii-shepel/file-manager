@@ -223,13 +223,63 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     }
   }
 
+  private createParentDirectoryEntry(currentPath: string): FileInfo {
+    return {
+      name: '..',
+      path: this.getParentPath(currentPath),
+      type: FileType.DIRECTORY,
+      size: 0,
+      modified: Date.now() / 1000,
+      permissions: 'drwxr-xr-x',
+      isHidden: false,
+      created: Date.now() / 1000,
+      accessed: Date.now() / 1000,
+    };
+  }
+  
   async loadDirectory(pane: BrowserPane, path: string): Promise<void> {
     pane.loading = true;
     pane.error = null;
     try {
       const listing = await this.apiService.listDirectory(path, this.showHidden);
       pane.currentPath = listing.path;
-      pane.entries = listing.entries;
+      
+      // Helper function to check if we can go up
+      const canGoUp = (p: string): boolean => {
+        // Not root (/) and not a Windows drive root (like C:/, C:\, C:, etc.)
+        return p !== '/' && !p.match(/^[A-Za-z]:(\\|\/)?$/);
+      };
+      
+      // Helper function to get parent path
+      const getParentPath = (p: string): string => {
+        if (p === '/' || p === '') return '/';
+        const parts = p.split('/').filter(part => part.length > 0);
+        if (parts.length === 0) return '/';
+        parts.pop();
+        return '/' + parts.join('/');
+      };
+      
+      // Create entries array starting with ".." if not at root
+      let entries = [...listing.entries];
+      
+      // Add parent directory entry at the beginning if not at root
+      if (canGoUp(listing.path)) {
+        const parentPath = getParentPath(listing.path);
+        const parentEntry: FileInfo = {
+          name: '..',
+          path: parentPath,
+          type: FileType.DIRECTORY,
+          size: 0,
+          modified: Date.now() / 1000, // Current time as modified date
+          permissions: 'drwxr-xr-x',
+          isHidden: false,
+          created: Date.now() / 1000,
+          accessed: Date.now() / 1000,
+        };
+        entries = [parentEntry, ...entries];
+      }
+      
+      pane.entries = entries;
       pane.selectedFiles.clear();
       this.applyFilter(pane);
       this.workspaceService.updateTabPath(pane.id, pane.currentTabId, path);
@@ -248,7 +298,14 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   }
 
   async navigateToPath(pane: BrowserPane, entry: FileInfo): Promise<void> {
-    if (entry.type === FileType.DIRECTORY) await this.loadDirectory(pane, entry.path);
+    if (entry.type === FileType.DIRECTORY) {
+      if (entry.name === '..') {
+        // Navigate to parent directory
+        await this.navigateToParent(pane);
+      } else {
+        await this.loadDirectory(pane, entry.path);
+      }
+    }
   }
 
   async navigateFromAddressBar(pane: BrowserPane, path: string): Promise<void> {

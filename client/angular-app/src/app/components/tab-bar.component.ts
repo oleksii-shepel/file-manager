@@ -42,7 +42,6 @@ import { TabInfo } from '@shared/protocol-enhanced';
       display: flex;
       height: 100%;
       align-items: flex-end;
-      padding-left: 6px;
       background: var(--vsc-tabbar-background);
     }
 
