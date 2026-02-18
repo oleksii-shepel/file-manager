@@ -18,14 +18,15 @@ import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
 import { PathHistoryService, PathSuggestion } from '../services/path-history.service';
 import { ApiService } from '../services/api.service';
 import { FileType } from '@shared/protocol';
+import { DriveInfo } from '@shared/protocol-enhanced';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PathSegment {
-  label: string;       // Display label, e.g. "Documents"
-  fullPath: string;    // Absolute path up to + including this segment
-  isRoot: boolean;     // True only for the root/drive node
-  rootLabel?: string;  // e.g. "C:" or "/"
+  label: string;
+  fullPath: string;
+  isRoot: boolean;
+  rootLabel?: string;
 }
 
 interface SiblingEntry {
@@ -53,55 +54,41 @@ const PINNED_KEY = 'filemanager:pinned-paths-v2';
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
-/**
- * Detect whether a path string looks like a Windows path.
- * Matches  C:\...  or  C:/...  (drive letter + colon)
- */
 function isWindowsPath(p: string): boolean {
   return /^[A-Za-z]:/.test(p);
 }
 
-/**
- * Normalise a path consistently for both Unix and Windows.
- * Always uses forward-slash as separator internally.
- */
 function normalizePath(p: string): string {
   if (!p) return '/';
-  // Convert backslashes
   let n = p.replace(/\\/g, '/');
-  // Collapse double slashes, but preserve the drive prefix  "C://"
   if (isWindowsPath(n)) {
-    const drive = n.slice(0, 2); // "C:"
-    const rest  = n.slice(2).replace(/\/+/g, '/');
+    const drive = n.slice(0, 2);
+    const rest = n.slice(2).replace(/\/+/g, '/');
     n = drive + (rest.startsWith('/') ? rest : '/' + rest);
   } else {
     n = n.replace(/\/+/g, '/');
   }
-  // Trim trailing slash unless it's the only character or a Windows root
   if (n.length > 1 && n.endsWith('/') && !(/^[A-Za-z]:\//.test(n) && n.length === 3)) {
     n = n.slice(0, -1);
   }
   return n || '/';
 }
 
-/**
- * Split a normalised path into segments.
- * Unix  /home/user/docs  → [{root:"/"}, {label:"home"}, {label:"user"}, {label:"docs"}]
- * Win   C:/Users/docs    → [{root:"C:"}, {label:"Users"}, {label:"docs"}]
- */
 function buildSegments(p: string): PathSegment[] {
   if (!p) return [];
 
   if (isWindowsPath(p)) {
-    const drive = p.slice(0, 2).toUpperCase(); // "C:"
-    const rest   = p.slice(3);                  // after "C:/"
-    const parts  = rest ? rest.split('/').filter(Boolean) : [];
+    const drive = p.slice(0, 2).toUpperCase();
+    const rest = p.slice(3);
+    const parts = rest ? rest.split('/').filter(Boolean) : [];
+    
     const segs: PathSegment[] = [{
-      label: drive, // Show 'C:' only
+      label: drive,
       fullPath: drive + '/',
       isRoot: true,
       rootLabel: drive,
     }];
+    
     parts.forEach((part, i) => {
       segs.push({
         label: part,
@@ -112,7 +99,6 @@ function buildSegments(p: string): PathSegment[] {
     return segs;
   }
 
-  // Unix
   const parts = p.split('/').filter(Boolean);
   const segs: PathSegment[] = [{
     label: '/',
@@ -132,7 +118,6 @@ function buildSegments(p: string): PathSegment[] {
 
 function parentPath(p: string): string {
   const n = normalizePath(p);
-  // Windows root
   if (/^[A-Za-z]:\/$/.test(n) || /^[A-Za-z]:$/.test(n)) return n;
   if (n === '/') return '/';
   const parts = n.split('/').filter(Boolean);
@@ -141,8 +126,8 @@ function parentPath(p: string): string {
   }
   parts.pop();
   if (isWindowsPath(n)) {
-    const drive = parts[0]; // "C:"
-    const rest   = parts.slice(1);
+    const drive = parts[0];
+    const rest = parts.slice(1);
     return rest.length ? drive + '/' + rest.join('/') : drive + '/';
   }
   return '/' + parts.join('/');
@@ -155,9 +140,6 @@ function parentPath(p: string): string {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-<!-- ═══════════════════════════════════════════════════════
-     ADDRESS BAR  —  Breadcrumb + Edit modes
-═══════════════════════════════════════════════════════════ -->
 <div class="ab-host" (keydown)="onHostKeyDown($event)">
 
   <!-- ── BREADCRUMB ROW ───────────────────────────────── -->
@@ -193,53 +175,77 @@ function parentPath(p: string): string {
         <div class="ab-dropdown ab-pin-drop" *ngIf="showPinDrop">
           <div class="ab-drop-head">
             <span>Pinned Paths</span>
-            <span class="ab-drop-count">{{ pinnedPaths.length }}</span>
+            <span class="ab-badge">{{ pinnedPaths.length }}</span>
           </div>
           <div class="ab-drop-empty" *ngIf="pinnedPaths.length === 0">
             <span class="ab-drop-empty-icon">📍</span>
             <span>No pinned paths yet.<br>Click ☆ to pin the current path.</span>
           </div>
-          <div
-            *ngFor="let p of pinnedPaths"
-            class="ab-drop-item ab-pin-item"
-            [class.ab-drop-item--active]="p.path === currentPath"
-            (click)="navigateTo(p.path)"
-          >
-            <span class="ab-pin-icon">{{ p.icon }}</span>
-            <span class="ab-pin-label" [title]="p.path">{{ p.label }}</span>
-            <span class="ab-pin-sub">{{ shortenPath(p.path) }}</span>
-            <button
-              class="ab-pin-remove"
-              (click)="removePin(p, $event)"
-              title="Remove"
-              aria-label="Remove pin"
-            >✕</button>
+          <div class="ab-drop-scroll">
+            <div
+              *ngFor="let p of pinnedPaths"
+              class="ab-drop-item ab-pin-item"
+              [class.ab-drop-item--active]="p.path === currentPath"
+              (click)="navigateTo(p.path)"
+            >
+              <span class="ab-pin-icon">{{ p.icon }}</span>
+              <span class="ab-pin-label" [title]="p.path">{{ p.label }}</span>
+              <span class="ab-pin-sub">{{ shortenPath(p.path) }}</span>
+              <button
+                class="ab-pin-remove"
+                (click)="removePin(p, $event)"
+                title="Remove"
+                aria-label="Remove pin"
+              >✕</button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Scrollable breadcrumb trail -->
-    <div 
-      class="ab-crumbs" 
-      (click)="onCrumbsClick($event)"
-    >
+    <div class="ab-crumbs" (click)="onCrumbsClick($event)">
       <div class="ab-crumbs-inner" #crumbsEl>
         <ng-container *ngFor="let seg of segments; let i = index; let last = last">
-
-          <!-- Segment pill -->
+          
+          <!-- DRIVE LETTER (Windows) - VS Code blue, clickable to show drive grid -->
           <span
+            *ngIf="seg.isRoot && isWin"
+            class="ab-seg ab-drive-letter"
+            [class.ab-seg--last]="last"
+            (click)="onDriveLetterClick(seg, $event)"
+            (contextmenu)="onSegRightClick(seg, i, $event)"
+            [title]="'Switch drives'"
+          >
+            {{ seg.label }}
+          </span>
+
+          <!-- CHEVRON after drive letter (shows root folder contents) -->
+          <div class="ab-drive-chevron-wrap" *ngIf="seg.isRoot && isWin && !last">
+            <button
+              class="ab-chev ab-drive-chevron"
+              [class.ab-chev--open]="chevIdx === i"
+              (click)="toggleChev(i, seg, $event)"
+              [title]="'Show contents of ' + seg.fullPath"
+              aria-label="Show drive contents"
+            >
+              ›
+            </button>
+          </div>
+
+          <!-- Regular segment (non-drive or Unix root) -->
+          <span
+            *ngIf="!seg.isRoot || !isWin"
             class="ab-seg"
             [class.ab-seg--root]="seg.isRoot"
             [class.ab-seg--last]="last"
-            [class.ab-seg--win-drive]="seg.isRoot && isWin"
             (click)="onSegClick(seg, $event)"
             (contextmenu)="onSegRightClick(seg, i, $event)"
             [title]="seg.fullPath"
           >{{ seg.label }}</span>
 
-          <!-- Chevron + sibling dropdown (between segments) -->
-          <div class="ab-chev-wrap" *ngIf="!last">
+          <!-- Regular chevron between segments (for non-drive segments) -->
+          <div class="ab-chev-wrap" *ngIf="!last && !(seg.isRoot && isWin)">
             <button
               class="ab-chev"
               [class.ab-chev--open]="chevIdx === i"
@@ -248,7 +254,8 @@ function parentPath(p: string): string {
               #chevBtn
             >›</button>
           </div>
-          <!-- Sibling dropdown rendered at root for visibility -->
+
+          <!-- Sibling dropdown -->
           <div
             class="ab-dropdown ab-sib-drop"
             *ngIf="chevIdx >= 0"
@@ -256,7 +263,7 @@ function parentPath(p: string): string {
           >
             <div class="ab-drop-head">
               <span>{{ segments[chevIdx].label }}</span>
-              <span class="ab-drop-count" *ngIf="!sibLoading">{{ siblings.length }}</span>
+              <span class="ab-badge" *ngIf="!sibLoading">{{ siblings.length }}</span>
             </div>
             <div class="ab-drop-loading" *ngIf="sibLoading">
               <span class="ab-spinner"></span>Loading…
@@ -265,17 +272,16 @@ function parentPath(p: string): string {
               <span class="ab-drop-empty-icon">📭</span>
               <span>No sub-folders</span>
             </div>
-            <div
-              *ngFor="let s of siblings"
-              class="ab-drop-item ab-sib-item"
-              [class.ab-drop-item--active]="s.isCurrent"
-              (click)="onSibClick(s)"
-            >
-              <span class="ab-sib-folder">📁</span>
-              <span class="ab-sib-name">{{ s.name }}</span>
-              <svg *ngIf="s.isCurrent" class="ab-sib-check" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M13.485 1.929L5.5 9.914 2.515 6.929a1 1 0 0 0-1.414 1.414l3.692 3.693a1 1 0 0 0 1.414 0l8.692-8.693a1 1 0 0 0-1.414-1.414z"/>
-              </svg>
+            <div class="ab-drop-scroll">
+              <div
+                *ngFor="let s of siblings"
+                class="ab-drop-item ab-sib-item"
+                [class.ab-drop-item--active]="s.isCurrent"
+                (click)="onSibClick(s)"
+              >
+                <span class="ab-sib-folder">📁</span>
+                <span class="ab-sib-name">{{ s.name }}</span>
+              </div>
             </div>
           </div>
         </ng-container>
@@ -328,18 +334,75 @@ function parentPath(p: string): string {
 
   <!-- ── AUTOCOMPLETE DROPDOWN ──────────────────────────── -->
   <div class="ab-dropdown ab-autocomplete" *ngIf="editMode && suggestions.length > 0">
-    <div
-      *ngFor="let s of suggestions; let i = index"
-      class="ab-drop-item ab-ac-item"
-      [class.ab-drop-item--focus]="acIdx === i"
-      (mouseenter)="acIdx = i"
-      (mousedown)="acceptSuggestion(s, $event)"
-    >
-      <span class="ab-ac-badge ab-ac-badge--{{ s.matchType }}">{{ s.matchType }}</span>
-      <span class="ab-ac-path" [innerHTML]="highlightMatch(s.path, editValue)"></span>
+    <div class="ab-drop-head">
+      <span>Suggestions</span>
+      <span class="ab-badge">{{ suggestions.length }}</span>
     </div>
-    <div class="ab-ac-footer">
-      <kbd>↑↓</kbd> navigate &nbsp; <kbd>⏎</kbd> select &nbsp; <kbd>Tab</kbd> first &nbsp; <kbd>Esc</kbd> cancel
+    <div class="ab-drop-scroll">
+      <div
+        *ngFor="let s of suggestions; let i = index"
+        class="ab-drop-item ab-ac-item"
+        [class.ab-drop-item--focused]="acIdx === i"
+        (mouseenter)="acIdx = i"
+        (mousedown)="acceptSuggestion(s, $event)"
+      >
+        <span class="ab-ac-badge ab-ac-badge--{{ s.matchType }}">{{ s.matchType }}</span>
+        <span class="ab-ac-path" [innerHTML]="highlightMatch(s.path, editValue)"></span>
+      </div>
+    </div>
+    <div class="ab-drop-footer">
+      <kbd>↑↓</kbd> navigate &nbsp; <kbd>⏎</kbd> select &nbsp; <kbd>Esc</kbd> cancel
+    </div>
+  </div>
+
+  <!-- ── DRIVE SWITCHER DROPDOWN (GRID) ─────────────────── -->
+  <div class="ab-dropdown ab-drive-drop" *ngIf="showDriveMenu"
+    [ngStyle]="{ left: driveMenuLeft + 'px', top: driveMenuTop + 'px', position: 'fixed' }">
+    <div class="ab-drop-head">
+      <span>Available Drives</span>
+      <span class="ab-badge">{{ drives.length }}</span>
+    </div>
+    
+    <div class="ab-drop-loading" *ngIf="drivesLoading">
+      <span class="ab-spinner"></span>Loading drives…
+    </div>
+    
+    <div class="ab-drop-empty" *ngIf="!drivesLoading && drives.length === 0">
+      <span class="ab-drop-empty-icon">💽</span>
+      <span>No drives found</span>
+    </div>
+    
+    <div class="ab-drive-grid" *ngIf="!drivesLoading && drives.length > 0">
+      <div
+        *ngFor="let d of drives"
+        class="ab-drive-grid-item"
+        [class.ab-drive-grid-item--active]="d.path === currentPath"
+        (click)="switchToDrive(d)"
+      >
+        <div class="ab-drive-grid-top">
+          <span class="ab-drive-grid-icon">{{ getDriveIcon(d) }}</span>
+          <span class="ab-drive-grid-letter">{{ d.name }}</span>
+          <span class="ab-drive-grid-label">{{ 'Local Drive' }}</span>
+          <svg *ngIf="d.path === currentPath" class="ab-drive-grid-check" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M13.485 1.929L5.5 9.914 2.515 6.929a1 1 0 0 0-1.414 1.414l3.692 3.693a1 1 0 0 0 1.414 0l8.692-8.693a1 1 0 0 0-1.414-1.414z"/>
+          </svg>
+        </div>
+        
+        <div class="ab-drive-grid-details">
+          <div class="ab-drive-grid-space" *ngIf="d.totalSpace > 0">
+            <span>{{ formatSize(d.freeSpace) }} free</span>
+            <span>of {{ formatSize(d.totalSpace) }}</span>
+            <div class="ab-drive-space-bar">
+              <div class="ab-drive-space-fill" 
+                   [style.width.%]="(d.freeSpace / d.totalSpace) * 100"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="ab-drop-footer" *ngIf="!drivesLoading && drives.length > 0">
+      <kbd>↑↓</kbd> navigate &nbsp; <kbd>⏎</kbd> select &nbsp; <kbd>Esc</kbd> close
     </div>
   </div>
 
@@ -378,12 +441,6 @@ function parentPath(p: string): string {
 </div>
   `,
   styles: [`
-/* ═══════════════════════════════════════════════════════════
-   ADDRESS BAR — Production-grade VS Code dark theme style
-   Aesthetic: Refined industrial minimalism
-   Key: every detail intentional, no decoration for its own sake
-═══════════════════════════════════════════════════════════ */
-
 :host {
   display: block;
   position: relative;
@@ -391,14 +448,12 @@ function parentPath(p: string): string {
   font-size: var(--vsc-font-size);
 }
 
-/* ── Host wrapper ─────────────────────────────────────── */
 .ab-host {
   position: relative;
   background: var(--vsc-sidebar-background);
   border-bottom: 1px solid var(--vsc-border);
 }
 
-/* ── Breadcrumb bar ───────────────────────────────────── */
 .ab-bar {
   display: flex;
   align-items: center;
@@ -410,7 +465,6 @@ function parentPath(p: string): string {
 
 .ab-bar--compact { height: 27px; }
 
-/* ── Left / right clusters ────────────────────────────── */
 .ab-cluster {
   display: flex;
   align-items: center;
@@ -421,7 +475,6 @@ function parentPath(p: string): string {
 .ab-cluster--left { padding-right: 3px; border-right: 1px solid var(--vsc-border); margin-right: 4px; }
 .ab-cluster--right { padding-left: 3px; border-left: 1px solid var(--vsc-border); margin-left: 4px; }
 
-/* ── Generic icon button ──────────────────────────────── */
 .ab-btn {
   display: flex;
   align-items: center;
@@ -462,13 +515,12 @@ function parentPath(p: string): string {
 .ab-btn--copied { color: var(--vsc-success) !important; }
 .ab-btn--cancel { font-size: 11px; color: var(--vsc-foreground-dim); }
 
-/* ── Crumbs scroll area ───────────────────────────────── */
 .ab-crumbs {
   display: block;
   align-items: center;
   flex: 1;
   min-width: 0;
-  overflow: visible; /* allow dropdowns to overflow */
+  overflow: visible;
   cursor: text;
 }
 
@@ -482,13 +534,10 @@ function parentPath(p: string): string {
   gap: 0;
   scroll-behavior: smooth;
   position: static !important;
-
-  /* Hide scrollbar but keep scrollable */
   scrollbar-width: none;
 }
 .ab-crumbs-inner::-webkit-scrollbar { display: none; }
 
-/* ── Segment pill ─────────────────────────────────────── */
 .ab-seg {
   display: inline-flex;
   align-items: center;
@@ -509,28 +558,12 @@ function parentPath(p: string): string {
     color: var(--vsc-foreground);
   }
 
-  /* Root / drive */
   &.ab-seg--root {
     font-weight: 600;
     color: var(--vsc-foreground);
     letter-spacing: 0.2px;
   }
 
-  /* Windows drive badge */
-  &.ab-seg--win-drive {
-    background: color-mix(in srgb, var(--vsc-accent-blue) 12%, transparent);
-    color: var(--vsc-accent-blue);
-    border: 1px solid color-mix(in srgb, var(--vsc-accent-blue) 30%, transparent);
-    font-family: var(--vsc-font-family-mono);
-    letter-spacing: 0.5px;
-
-    &:hover {
-      background: color-mix(in srgb, var(--vsc-accent-blue) 22%, transparent);
-      color: var(--vsc-foreground-bright);
-    }
-  }
-
-  /* Last (current) segment */
   &.ab-seg--last {
     color: var(--vsc-foreground-bright);
     font-weight: 500;
@@ -540,13 +573,61 @@ function parentPath(p: string): string {
   }
 }
 
-/* ── Chevron button ───────────────────────────────────── */
+/* Drive letter - VS Code blue, clickable to show drive grid */
+.ab-drive-letter {
+  background: color-mix(in srgb, var(--vsc-accent-blue) 12%, transparent);
+  color: var(--vsc-accent-blue);
+  border: 1px solid color-mix(in srgb, var(--vsc-accent-blue) 30%, transparent);
+  border-radius: 4px;
+  font-family: var(--vsc-font-family-mono);
+  font-weight: 600;
+  padding: 2px 6px 2px 8px;
+  margin-right: 0;
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--vsc-accent-blue) 22%, transparent);
+    border-color: var(--vsc-accent-blue);
+    color: var(--vsc-foreground-bright);
+  }
+
+  &.ab-seg--last {
+    background: color-mix(in srgb, var(--vsc-accent-blue) 15%, transparent);
+    border-color: var(--vsc-accent-blue);
+  }
+}
+
+/* Drive chevron wrapper */
+.ab-drive-chevron-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* Drive chevron - shows root folder contents */
+.ab-drive-chevron {
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+  background: transparent;
+  
+  &:hover {
+    background: var(--vsc-list-hover-background);
+  }
+
+  &.ab-chev--open {
+    transform: rotate(90deg);
+    color: var(--vsc-accent-blue);
+    background: color-mix(in srgb, var(--vsc-accent-blue) 14%, transparent);
+  }
+}
+
 .ab-chev-wrap {
   position: relative;
   flex-shrink: 0;
+  overflow: visible;
+  display: inline-flex;
+  align-items: center;
 }
-
-.ab-chev-wrap { overflow: visible; }
 
 .ab-chev {
   display: flex;
@@ -556,7 +637,7 @@ function parentPath(p: string): string {
   height: 22px;
   padding: 0;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--vsc-border-bright);
   font-size: 15px;
   cursor: pointer;
@@ -575,50 +656,252 @@ function parentPath(p: string): string {
   }
 }
 
-/* ── Generic dropdown ─────────────────────────────────── */
+/* Dropdown styles */
 .ab-dropdown {
   position: absolute;
-  background: var(--vsc-panel-background);
-  border: 1px solid var(--vsc-border-bright);
-  border-radius: 6px;
-  box-shadow:
-    0 4px 6px -2px rgba(0,0,0,0.3),
-    0 12px 32px -4px rgba(0,0,0,0.5);
-  z-index: 9000;
+  min-width: 220px;
+  max-width: 340px;
+  background: var(--vsc-panel-background, #252526);
+  border: 1px solid var(--vsc-border, #3c3c3c);
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.14), 0 8px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.1);
+  z-index: 2000;
   overflow: hidden;
-  animation: ab-appear 0.13s cubic-bezier(0.2,0,0.2,1);
+  animation: ab-appear 0.1s cubic-bezier(0.4,0,0.2,1);
 }
 
 @keyframes ab-appear {
-  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0)   scale(1); }
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .ab-drop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 5px;
-  font-size: 10.5px;
-  font-weight: 700;
+  height: 30px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--vsc-sidebar-background, #1e1e1e) 80%, var(--vsc-panel-background, #252526));
+  border-bottom: 1px solid var(--vsc-border, #3c3c3c);
+  font-size: 11px;
+  color: var(--vsc-foreground-dim, #858585);
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: var(--vsc-accent-blue);
-  background: color-mix(in srgb, var(--vsc-sidebar-background) 60%, var(--vsc-panel-background));
-  border-bottom: 1px solid var(--vsc-border);
+  font-weight: 700;
 }
 
-.ab-drop-sep { opacity: 0.5; margin-left: 1px; }
-
-.ab-drop-count {
-  font-size: 10px;
+.ab-badge {
+  font-size: 9.5px;
   font-weight: 700;
-  background: var(--vsc-accent-blue);
+  background: var(--vsc-badge-background, #4d4d4d);
   color: #fff;
   border-radius: 10px;
-  padding: 1px 6px;
-  min-width: 18px;
+  padding: 1px 5px;
+  min-width: 16px;
   text-align: center;
+}
+
+.ab-drop-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 3px 0;
+}
+
+.ab-drop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: background 0.08s;
+  border-left: 2px solid transparent;
+
+  &:hover {
+    background: var(--vsc-list-hover-background, #2a2d2e);
+  }
+
+  &.ab-drop-item--active {
+    background: color-mix(in srgb, var(--vsc-accent-blue) 16%, transparent);
+    border-left-color: var(--vsc-accent-blue);
+    
+    &:hover {
+      background: color-mix(in srgb, var(--vsc-accent-blue) 24%, transparent);
+    }
+  }
+
+  &.ab-drop-item--focused {
+    background: var(--vsc-list-hover-background, #2a2d2e);
+  }
+}
+
+.ab-checkbox {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--vsc-border-bright, #5a5a5a);
+  border-radius: 2px;
+  background: var(--vsc-panel-background, #252526);
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.ab-checkbox--checked {
+  background: var(--vsc-accent-blue) !important;
+  border-color: var(--vsc-accent-blue) !important;
+}
+
+.ab-drop-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 26px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--vsc-sidebar-background, #1e1e1e) 60%, var(--vsc-panel-background, #252526));
+  border-top: 1px solid var(--vsc-border, #3c3c3c);
+  font-size: 11px;
+  color: var(--vsc-foreground-dim, #858585);
+
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 14px;
+    padding: 0 3px;
+    background: #0a0a0a;
+    border: 1px solid var(--vsc-border, #3c3c3c);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    font-family: var(--vsc-font-family-mono, Consolas, monospace);
+    font-size: 9.5px;
+    color: #cccccc;
+    line-height: 1;
+    margin: 0 1px;
+  }
+}
+
+/* Drive dropdown grid */
+.ab-drive-drop {
+  min-width: 320px;
+  max-width: 500px;
+  padding: 8px;
+}
+
+.ab-drive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+  padding: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.ab-drive-grid-item {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+  background: var(--vsc-sidebar-background);
+  border: 1px solid var(--vsc-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  gap: 4px;
+
+  &:hover {
+    background: var(--vsc-list-hover-background);
+    border-color: var(--vsc-border-bright);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+
+  &.ab-drive-grid-item--active {
+    background: color-mix(in srgb, var(--vsc-accent-blue) 15%, transparent);
+    border-color: var(--vsc-accent-blue);
+  }
+}
+
+.ab-drive-grid-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ab-drive-grid-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.ab-drive-grid-letter {
+  font-family: var(--vsc-font-family-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--vsc-accent-blue);
+}
+
+.ab-drive-grid-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vsc-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.ab-drive-grid-check {
+  color: var(--vsc-accent-blue);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ab-drive-grid-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--vsc-foreground-dim);
+}
+
+.ab-drive-grid-path {
+  font-family: var(--vsc-font-family-mono);
+  font-size: 10px;
+  color: var(--vsc-foreground-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ab-drive-grid-space {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+}
+
+.ab-drive-space-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--vsc-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ab-drive-space-fill {
+  height: 100%;
+  background: var(--vsc-accent-blue);
+  border-radius: 2px;
+}
+
+.ab-drop-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--vsc-foreground-dim, #858585);
 }
 
 .ab-drop-empty {
@@ -628,57 +911,44 @@ function parentPath(p: string): string {
   gap: 4px;
   padding: 16px 12px;
   font-size: 11.5px;
-  color: var(--vsc-foreground-dim);
+  color: var(--vsc-foreground-dim, #858585);
   text-align: center;
   line-height: 1.5;
 }
 
-.ab-drop-empty-icon { font-size: 22px; opacity: 0.5; }
-
-.ab-drop-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--vsc-foreground-dim);
+.ab-drop-empty-icon {
+  font-size: 22px;
+  opacity: 0.5;
 }
 
-.ab-drop-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: background 0.08s;
-  border-left: 2px solid transparent;
-
-  &:hover { background: var(--vsc-list-hover-background); }
-  &.ab-drop-item--active {
-    background: color-mix(in srgb, var(--vsc-accent-blue) 12%, transparent);
-    border-left-color: var(--vsc-accent-blue);
-  }
-  &.ab-drop-item--focus {
-    background: var(--vsc-list-hover-background);
-    outline: none;
-  }
+.ab-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--vsc-border);
+  border-top-color: var(--vsc-accent-blue);
+  border-radius: 50%;
+  animation: ab-spin 0.65s linear infinite;
 }
 
-/* ── Pin dropdown ─────────────────────────────────────── */
+@keyframes ab-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pin dropdown */
 .ab-pin-drop {
-  top: calc(100% + 5px);
-  left: 0;
   min-width: 270px;
   max-width: 370px;
-  max-height: 340px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
-.ab-pin-item { padding-right: 6px; }
+.ab-pin-item {
+  padding-right: 6px;
+}
 
-.ab-pin-icon { font-size: 14px; flex-shrink: 0; }
+.ab-pin-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
 
 .ab-pin-label {
   flex: 1;
@@ -719,46 +989,26 @@ function parentPath(p: string): string {
   &:hover { background: var(--vsc-error) !important; color: #fff !important; }
 }
 
-/* ── Sibling dropdown ─────────────────────────────────── */
+/* Sibling dropdown */
 .ab-sib-drop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: -8px;
   min-width: 210px;
   max-width: 320px;
-  max-height: 300px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 10020; /* ensure above other panels */
 }
 
-.ab-sib-drop > .ab-drop-item {
-  overflow-y: auto;
+.ab-sib-folder {
+  font-size: 13px;
+  flex-shrink: 0;
 }
-
-/* scrollable list inside */
-.ab-sib-drop::after {
-  content: '';
-  display: block;
-}
-
-/* make the items area scroll, not the whole dropdown */
-.ab-sib-item { min-height: 30px; }
-
-.ab-sib-folder { font-size: 13px; flex-shrink: 0; }
 
 .ab-sib-name {
   flex: 1;
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.ab-sib-check { color: var(--vsc-success); flex-shrink: 0; }
-
-/* ── Edit mode row ────────────────────────────────────── */
+/* Edit mode */
 .ab-edit {
   display: flex;
   align-items: center;
@@ -805,25 +1055,11 @@ function parentPath(p: string): string {
   overflow: hidden;
 }
 
-/* ── Autocomplete dropdown ────────────────────────────── */
+/* Autocomplete */
 .ab-autocomplete {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  max-height: 220px;
+  max-height: 300px;
   overflow-y: auto;
-  border-top: none;
-  border-radius: 0 0 6px 6px;
-  z-index: 9001;
-
-  scrollbar-width: thin;
-  scrollbar-color: var(--vsc-scrollbar-thumb) transparent;
-  &::-webkit-scrollbar { width: 5px; }
-  &::-webkit-scrollbar-thumb { background: var(--vsc-scrollbar-thumb); border-radius: 3px; }
 }
-
-.ab-ac-item { gap: 8px; }
 
 .ab-ac-badge {
   flex-shrink: 0;
@@ -857,36 +1093,14 @@ function parentPath(p: string): string {
   }
 }
 
-.ab-ac-footer {
-  padding: 5px 10px;
-  font-size: 10.5px;
-  color: var(--vsc-foreground-dim);
-  background: color-mix(in srgb, var(--vsc-sidebar-background) 60%, var(--vsc-panel-background));
-  border-top: 1px solid var(--vsc-border);
-
-  kbd {
-    display: inline-block;
-    padding: 1px 4px;
-    background: var(--vsc-panel-background);
-    border: 1px solid var(--vsc-border-bright);
-    border-radius: 3px;
-    font-family: var(--vsc-font-family-mono);
-    font-size: 10px;
-    color: var(--vsc-accent-blue);
-    margin: 0 1px;
-  }
-}
-
-/* ── Right-click context menu ─────────────────────────── */
+/* Context menu */
 .ab-ctx-menu {
   position: fixed;
   min-width: 200px;
   background: var(--vsc-panel-background);
   border: 1px solid var(--vsc-border-bright);
   border-radius: 6px;
-  box-shadow:
-    0 4px 6px -2px rgba(0,0,0,0.3),
-    0 12px 32px -4px rgba(0,0,0,0.55);
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.3), 0 12px 32px -4px rgba(0,0,0,0.55);
   z-index: 99999;
   padding: 4px 0;
   animation: ab-appear 0.1s cubic-bezier(0.2,0,0.2,1);
@@ -932,38 +1146,38 @@ function parentPath(p: string): string {
   }
 }
 
-/* ── Spinner ──────────────────────────────────────────── */
-.ab-spinner {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border: 2px solid var(--vsc-border);
-  border-top-color: var(--vsc-accent-blue);
-  border-radius: 50%;
-  animation: ab-spin 0.65s linear infinite;
+/* Compact mode */
+:host-context(.compact-mode) {
+  .ab-bar { height: 26px; }
+  .ab-edit { height: 26px; }
+  .ab-btn { width: 21px; height: 21px; }
+  .ab-chev { height: 18px; }
+  
+  .ab-drive-letter {
+    font-size: 12px;
+    padding: 1px 4px 1px 6px;
+  }
+
+  .ab-drive-grid-item {
+    padding: 6px;
+  }
+
+  .ab-seg {
+    font-size: 11.5px;
+    padding: 1px 4px;
+  }
 }
 
-@keyframes ab-spin { to { transform: rotate(360deg); } }
-
-/* ── Drop-anchor positioning helper ───────────────────── */
+/* Drop anchor */
 .ab-drop-anchor {
   position: relative;
 }
 
-/* ── Compact mode ─────────────────────────────────────── */
-:host-context(.compact-mode) {
-  .ab-bar  { height: 26px; }
-  .ab-edit { height: 26px; }
-  .ab-seg  { font-size: 11.5px; padding: 1px 4px; }
-  .ab-btn  { width: 21px; height: 21px; }
-  .ab-chev { height: 18px; }
-}
-
-/* ── Light theme overrides ────────────────────────────── */
+/* Light theme */
 :host-context(.vscode-light) {
-  .ab-seg--win-drive {
+  .ab-drive-letter {
     background: color-mix(in srgb, var(--vsc-accent-blue) 8%, transparent);
-    border-color: color-mix(in srgb, var(--vsc-accent-blue) 25%, transparent);
+    border-color: color-mix(in srgb, var(--vsc-accent-blue) 20%, transparent);
   }
 }
   `],
@@ -976,16 +1190,25 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   @Input() placeholder = 'Enter path…';
   @Input() paneId = 'left';
 
-  @Output() pathChange          = new EventEmitter<string>();
-  @Output() navigateUpClicked   = new EventEmitter<void>();
-  @Output() refreshClicked      = new EventEmitter<void>();
-  /** Emitted when "Open in other pane" is chosen from context menu */
-  @Output() openInOtherPane     = new EventEmitter<string>();
+  @Output() pathChange = new EventEmitter<string>();
+  @Output() navigateUpClicked = new EventEmitter<void>();
+  @Output() refreshClicked = new EventEmitter<void>();
+  @Output() openInOtherPane = new EventEmitter<string>();
 
   // ── State: path ─────────────────────────────────────────
   currentPath = '/';
   segments: PathSegment[] = [];
-  isWin = false;
+  
+  get isWin(): boolean {
+    return isWindowsPath(this.currentPath);
+  }
+
+  // ── State: drive switcher ────────────────────────────────
+  drives: DriveInfo[] = [];
+  showDriveMenu = false;
+  driveMenuLeft = 0;
+  driveMenuTop = 0;
+  drivesLoading = false;
 
   // ── State: chevron / siblings ────────────────────────────
   chevIdx = -1;
@@ -1032,30 +1255,25 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   // Lifecycle
   // ────────────────────────────────────────────────────────
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
     this.currentPath = normalizePath(this.initialPath);
-    // Default to false, will update after OS info
-    this.isWin = false;
-    try {
-      const osInfo = await this.apiService.getOSInfo();
-    } catch (e) {
-      // fallback: guess from path
-      this.isWin = isWindowsPath(this.currentPath);
-    }
     this.rebuildSegments();
     this.loadPins();
-    // Debounced autocomplete
+
     this.editChange$
       .pipe(debounceTime(240), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(v => this.fetchSuggestions(v));
+
+    if (this.isWin) {
+      this.loadDrives();
+    }
   }
 
-  ngOnChanges(c: SimpleChanges): void {
-    if (c['initialPath'] && !c['initialPath'].firstChange) {
-      const next = normalizePath(c['initialPath'].currentValue);
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialPath'] && !changes['initialPath'].firstChange) {
+      const next = normalizePath(changes['initialPath'].currentValue);
       if (next !== this.currentPath) {
         this.currentPath = next;
-        this.isWin = isWindowsPath(next);
         this.rebuildSegments();
         if (this.editMode) this.editValue = next;
       }
@@ -1070,12 +1288,69 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   // ────────────────────────────────────────────────────────
+  // Drive handling
+  // ────────────────────────────────────────────────────────
+
+  onDriveLetterClick(seg: PathSegment, e: MouseEvent): void {
+    e.stopPropagation();
+    this.closeAll();
+    
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    this.driveMenuLeft = rect.left;
+    this.driveMenuTop = rect.bottom + 4;
+    
+    this.showDriveMenu = true;
+    
+    if (this.drives.length === 0 && !this.drivesLoading) {
+      this.loadDrives();
+    }
+  }
+
+  switchToDrive(drive: DriveInfo): void {
+    this.showDriveMenu = false;
+    if (drive.path !== this.currentPath) {
+      this.navigateTo(drive.path);
+    }
+  }
+
+  async loadDrives(): Promise<void> {
+    if (!this.isWin) return;
+    
+    this.drivesLoading = true;
+    try {
+      const drives = await this.apiService.listDrives();
+      this.drives = drives || [];
+    } catch (error) {
+      console.error('Failed to load drives', error);
+      this.drives = [];
+    } finally {
+      this.drivesLoading = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  getDriveIcon(drive: DriveInfo): string {
+    if (drive.driveType === 'fixed') return '💽';
+    if (drive.driveType === 'removable') return '💾';
+    if (drive.driveType === 'cdrom') return '💿';
+    if (drive.driveType === 'network') return '🌐';
+    if (drive.driveType === 'ramdisk') return '⚡';
+    return '💽';
+  }
+
+  formatSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+  }
+
+  // ────────────────────────────────────────────────────────
   // Segments
   // ────────────────────────────────────────────────────────
 
   private rebuildSegments(): void {
     this.segments = buildSegments(this.currentPath);
-    // Scroll crumbs to end after render
     setTimeout(() => {
       if (this.crumbsEl) {
         const el = this.crumbsEl.nativeElement;
@@ -1083,10 +1358,6 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
       }
     }, 0);
   }
-
-  // ────────────────────────────────────────────────────────
-  // Segment click
-  // ────────────────────────────────────────────────────────
 
   onSegClick(seg: PathSegment, e: MouseEvent): void {
     e.stopPropagation();
@@ -1103,6 +1374,7 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   async toggleChev(idx: number, seg: PathSegment, e: MouseEvent): Promise<void> {
     e.stopPropagation();
     this.showPinDrop = false;
+    this.showDriveMenu = false;
 
     if (this.chevIdx === idx) {
       this.chevIdx = -1;
@@ -1110,17 +1382,15 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    // Find the chevron button's screen position
     const target = e.target as HTMLElement;
     const rect = target.getBoundingClientRect();
     this.sibDropLeft = Math.round(rect.left);
-    this.sibDropTop = Math.round(rect.bottom + 4); // 4px gap
+    this.sibDropTop = Math.round(rect.bottom + 4);
 
     this.chevIdx = idx;
     this.siblings = [];
     this.sibLoading = true;
 
-    // Determine current active child path
     const activeChildPath = idx + 1 < this.segments.length
       ? this.segments[idx + 1].fullPath
       : null;
@@ -1146,8 +1416,6 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onCrumbsClick(e: MouseEvent): void {
-    // Only enter edit mode if clicking directly on the crumbs container,
-    // not on its children (segments or chevrons)
     const target = e.target as HTMLElement;
     if (target.classList.contains('ab-crumbs')) {
       this.enterEditMode();
@@ -1182,7 +1450,10 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
 
   togglePinDrop(): void {
     this.showPinDrop = !this.showPinDrop;
-    if (this.showPinDrop) this.chevIdx = -1;
+    if (this.showPinDrop) {
+      this.chevIdx = -1;
+      this.showDriveMenu = false;
+    }
   }
 
   removePin(p: PinnedPath, e: MouseEvent): void {
@@ -1268,7 +1539,6 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onHostKeyDown(e: KeyboardEvent): void {
-    // Ctrl/Cmd+L → focus address bar
     if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
       e.preventDefault();
       this.enterEditMode();
@@ -1387,7 +1657,6 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
     this.closeAll();
     if (np !== this.currentPath) {
       this.currentPath = np;
-      this.isWin = isWindowsPath(np);
       this.rebuildSegments();
       this.pathChange.emit(np);
     }
@@ -1401,6 +1670,7 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
     this.chevIdx = -1;
     this.siblings = [];
     this.showPinDrop = false;
+    this.showDriveMenu = false;
     this.closeCtx();
   }
 
@@ -1420,8 +1690,8 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
   onDocKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
       if (this.ctxMenu.visible) { this.closeCtx(); e.preventDefault(); }
-      else if (this.editMode)   { this.exitEditMode(false); e.preventDefault(); }
-      else if (this.chevIdx >= 0 || this.showPinDrop) { this.closeAll(); e.preventDefault(); }
+      else if (this.editMode) { this.exitEditMode(false); e.preventDefault(); }
+      else if (this.chevIdx >= 0 || this.showPinDrop || this.showDriveMenu) { this.closeAll(); e.preventDefault(); }
     }
   }
 }
