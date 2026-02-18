@@ -250,11 +250,29 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
         return p !== '/' && !p.match(/^[A-Za-z]:(\\|\/)?$/);
       };
       
-      // Helper function to get parent path
+      // Helper function to get parent path (handles both Unix and Windows paths)
       const getParentPath = (p: string): string => {
-        if (p === '/' || p === '') return '/';
-        const parts = p.split('/').filter(part => part.length > 0);
-        if (parts.length === 0) return '/';
+        if (!p || p === '/') return '/';
+
+        // Detect if this looks like a Windows drive path (e.g. C:\ or C:/...)
+        const winMatch = p.match(/^([A-Za-z]:)([\\/].*)?$/);
+        const hasBackslash = p.includes('\\');
+
+        if (winMatch) {
+          // Split by both separators so we get ['C:', 'Users', 'Name']
+          const parts = p.split(/[\\/]+/).filter(Boolean);
+          if (parts.length <= 1) {
+            // Already at drive root — return normalized drive root
+            return winMatch[1] + (hasBackslash ? '\\' : '/');
+          }
+          parts.pop();
+          const sep = hasBackslash ? '\\' : '/';
+          return parts.join(sep);
+        }
+
+        // Unix-style path
+        const parts = p.split('/').filter(Boolean);
+        if (parts.length <= 1) return '/';
         parts.pop();
         return '/' + parts.join('/');
       };
@@ -313,9 +331,21 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   }
 
   private getParentPath(path: string): string {
-    if (path === '/' || path === '') return '/';
+    if (!path || path === '/') return '/';
+
+    const winMatch = path.match(/^([A-Za-z]:)([\\/].*)?$/);
+    const hasBackslash = path.includes('\\');
+
+    if (winMatch) {
+      const parts = path.split(/[\\/]+/).filter(Boolean);
+      if (parts.length <= 1) return winMatch[1] + (hasBackslash ? '\\' : '/');
+      parts.pop();
+      const sep = hasBackslash ? '\\' : '/';
+      return parts.join(sep);
+    }
+
     const parts = path.split('/').filter(p => p.length > 0);
-    if (parts.length === 0) return '/';
+    if (parts.length <= 1) return '/';
     parts.pop();
     return '/' + parts.join('/');
   }

@@ -656,25 +656,27 @@ function parentPath(p: string): string {
       }
     }
 
-    /* Drive letter styling */
+    /* Drive letter styling - use same visual as the AND/OR mode badge */
     .ab-drive-letter {
-      background: var(--vsc-badge-background);
-      color: var(--vsc-badge-foreground);
-      border-radius: var(--vsc-border-radius-sm);
+      background: color-mix(in srgb, #007fd4 20%, transparent);
+      border: 1px solid rgba(0,127,212,0.4);
+      border-radius: 4px;
+      color: #7ec8f8;
       font-family: var(--vsc-font-family-mono);
       font-weight: 600;
       padding: 0 var(--vsc-padding-lg) !important;
       margin-right: var(--vsc-padding-md) !important;
       cursor: pointer;
-      border: none;
-      
+      transition: background 0.08s, border-color 0.08s, color 0.08s;
+
       &:hover {
-        background: var(--vsc-button-hover);
-        color: var(--vsc-foreground-bright);
+        background: color-mix(in srgb, #007fd4 30%, transparent);
+        border-color: rgba(0,127,212,0.6);
+        color: #7ec8f8;
       }
 
       &.ab-seg--last {
-        background: var(--vsc-button-background);
+        background: color-mix(in srgb, #007fd4 18%, transparent);
       }
     }
 
@@ -1488,8 +1490,9 @@ function parentPath(p: string): string {
     /* === LIGHT THEME ADJUSTMENTS === */
     :host-context(.vscode-light) {
       .ab-drive-letter {
-        background: var(--vsc-button-background);
-        color: var(--vsc-foreground-bright);
+        background: color-mix(in srgb, #0060c0 15%, transparent);
+        border-color: rgba(0,96,192,0.4);
+        color: #0060c0;
       }
       
       .ab-btn--star:hover {
