@@ -18,111 +18,103 @@ import { TabInfo } from '@shared/protocol-enhanced';
                    (tabClose)="onTabClose($event)"
                    (tabPin)="onTabPin($event)">
           </app-tab>
+          
+          <!-- New Tab Button -->
+          <button class="new-tab-btn" (click)="onNewTab()" [class.compact]="isCompact" title="New Tab (Ctrl+N)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/>
+            </svg>
+          </button>
         </div>
-      </div>
-      
-      <div class="tab-bar-actions">
-        <button class="action-btn new-tab" (click)="onNewTab()" title="New Tab (Ctrl+N)"></button>
       </div>
     </div>
   `,
   styles: [`
     :host {
       display: block;
-      /* Lighter/darker container background to contrast with active tab */
-      background: var(--vsc-tab-container-bg, #252526);
-      border-bottom: 1px solid var(--vsc-border-subtle, #3c3c3c);
+      background: var(--vsc-tabbar-background);
+      border-bottom: 1px solid var(--vsc-tab-border);
       overflow: hidden;
+      height: 35px;
     }
 
     .tab-bar-container {
       display: flex;
-      height: 35px;
-      background: inherit;
+      height: 100%;
+      align-items: flex-end;
+      padding-left: 6px;
+      background: var(--vsc-tabbar-background);
     }
 
-    /* Make container slightly different from inactive tabs */
-    :host-context(.vscode-dark) .tab-bar-container {
-      background: #2a2a2a; /* Slightly different from inactive tab (2d2d2d) */
+    .tab-bar-container.compact {
+      height: 100%;
+      min-height: 0;
     }
 
-    :host-context(.vscode-light) .tab-bar-container {
-      background: #e8e8e8; /* Slightly different from inactive tab (e0e0e0) */
-    }
-
-    /* Scrollable Viewport */
     .tabs-scroll-viewport {
       flex: 1;
       display: flex;
       overflow-x: auto;
-      overflow-y: hidden;
       scrollbar-width: none;
-      position: relative;
+      height: 100%;
     }
 
     .tabs-scroll-viewport::-webkit-scrollbar {
       display: none;
     }
 
-    /* Tabs List */
     .tabs-list {
       display: flex;
       align-items: stretch;
-      min-width: 0;
+      height: 100%;
+      min-height: 0;
     }
 
-    /* Fade Effect for Overflow */
+    ::ng-deep app-tab {
+      display: flex;
+      align-items: stretch;
+      height: 100%;
+    }
+
+    /* Fade overflow */
     .tabs-scroll-viewport::after {
-      content: '';
+      content: "";
       position: sticky;
       right: 0;
-      top: 0;
-      width: 20px;
+      width: 24px;
       height: 100%;
-      background: linear-gradient(to right, transparent, var(--vsc-tab-container-bg, #252526));
       pointer-events: none;
-      z-index: 5;
+      background: linear-gradient(
+        to right,
+        transparent,
+        var(--vsc-tabbar-background)
+      );
+      z-index: 3;
     }
 
-    /* Action Buttons (Right side) */
-    .tab-bar-actions {
-      display: flex;
-      align-items: center;
-      padding: 0 4px;
-      background: var(--vsc-tab-container-bg, #252526);
-      border-left: 1px solid var(--vsc-border-subtle, #3c3c3c);
-      z-index: 10;
-    }
-
-    .action-btn {
-      width: 28px;
-      height: 28px;
+    /* New Tab Button */
+    .new-tab-btn {
+      width: 30px;
+      height: 30px;
+      margin: auto 4px 0 6px;
+      border: none;
+      background: transparent;
+      color: var(--vsc-tab-foreground);
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: none;
-      background: transparent;
-      color: var(--vsc-foreground-dim);
-      border-radius: 3px;
-      cursor: pointer;
-      transition: background 0.1s, color 0.1s;
     }
 
-    .action-btn:hover {
-      background: var(--vsc-list-hover-background, #2a2d2e);
-      color: var(--vsc-foreground);
+    .new-tab-btn:hover {
+      background: var(--vsc-tab-hover-background);
+      color: var(--vsc-tab-hover-foreground);
     }
 
-    .new-tab::before {
-      content: '+';
-      font-size: 18px;
-      font-weight: 300;
+    .new-tab-btn.compact {
+      width: 26px;
+      height: 26px;
     }
-
-    /* Compact Mode */
-    .compact .tab-bar-container { height: 28px; }
-    .compact .action-btn { width: 24px; height: 24px; }
-    .compact .action-btn::before { font-size: 16px; }
   `]
 })
 export class TabBarComponent {

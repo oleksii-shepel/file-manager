@@ -14,154 +14,169 @@ import { TabInfo } from "@shared/protocol-enhanced";
          (auxclick)="onMouseUp($event)"
          (mouseenter)="isHovered = true"
          (mouseleave)="isHovered = false">
-      
       <span class="tab-icon">📁</span>
       <span class="tab-title">{{ tab.title }}</span>
-
+      <!-- Active Tab Indicators -->
+      <div class="tab-border-top" *ngIf="isActive"></div>
+      <div class="tab-active-indicator"></div>
       <div class="tab-actions">
-        <!-- Dirty dot (modified) - only show when not hovered -->
-        <span *ngIf="!isHovered" class="dirty-dot" [class.active-dirty]="isActive"></span>
-        
         <!-- Pinned indicator/button -->
         <button *ngIf="tab.isPinned" class="tab-action pin" (click)="onPin($event)" 
                 [class.active-action]="isActive" title="Unpin tab">
           <span class="pin-icon">📌</span>
         </button>
-        
         <!-- Close button -->
         <button class="tab-action close" (click)="onClose($event)" 
                 [class.active-action]="isActive" title="Close (Ctrl+W)"></button>
       </div>
-      
-      <!-- Active Tab Indicators -->
-      <div class="tab-border-top" *ngIf="isActive"></div>
-      <div class="tab-active-indicator"></div>
     </div>
   `,
-styles: [`
-  .tab {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 14px;
-    height: 34px;
-    min-width: 120px;
-    max-width: 240px;
-    cursor: pointer;
+  styles: [`
+    :host {
+      display: flex;
+      align-items: flex-end;
+      height: 100%;
+    }
 
-    color: var(--vsc-foreground-dim);
-    background: transparent;
+    .tab {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      padding: 2px 14px 0 14px; /* shift tab down by 2px */
+      min-width: 120px;
+      max-width: 240px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--vsc-tab-foreground);
+      background: var(--vsc-tab-background);
+      border-right: 1px solid var(--vsc-tab-border);
+      border-left: 1px solid transparent;
+      border-top: 1px solid transparent;
+      box-shadow: var(--vsc-tab-shadow);
+      transition:
+        background var(--vsc-transition-fast),
+        color var(--vsc-transition-fast);
+    }
 
-    border-radius: 8px 8px 0 0;
+    .tab-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      margin-left: auto;
+      height: 100%;
+    }
 
-    transition:
-      background 140ms ease,
-      color 140ms ease,
-      box-shadow 160ms ease;
-  }
+    /* Hover */
+    .tab:hover:not(.active) {
+      background: var(--vsc-tab-hover-background);
+      color: var(--vsc-tab-hover-foreground);
+    }
 
-  /* hover */
-  .tab:hover {
-    background: rgba(255,255,255,.06);
-    color: var(--vsc-foreground);
-  }
+    /* Active */
+    .tab.active {
+      background: var(--vsc-editor-background); /* match content below */
+      color: var(--vsc-tab-active-foreground);
+      border-left-color: var(--vsc-tab-border);
+      border-right-color: var(--vsc-tab-border);
+      border-top-color: var(--vsc-tab-active-border-top);
+      position: relative;
+      z-index: 5;
+    }
 
-  /* active tab */
-  .tab.active {
-    background: var(--vsc-editor-background);
-    color: var(--vsc-foreground);
-    z-index: 2;
+    .tab.active::after {
+      display: none;
+    }
 
-    box-shadow:
-      0 -1px 0 rgba(255,255,255,.06),
-      0 2px 6px rgba(0,0,0,.35);
-  }
+    /* Icon */
+    .tab-icon {
+      font-size: 15px;
+      opacity: .75;
+    }
 
-  /* icon */
-  .tab-icon {
-    font-size: 15px;
-    opacity: .75;
-    transform: translateY(.5px);
-  }
+    /* Title */
+    .tab-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--vsc-font-size);
+    }
 
-  /* title */
-  .tab-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 13px;
-  }
+    /* Action buttons */
+    .tab-action {
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      opacity: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-  /* buttons */
-  .tab-close,
-  .tab-pin {
-    width: 18px;
-    height: 18px;
-    border: none;
-    background: transparent;
-    color: var(--vsc-foreground-dim);
+    .tab:hover .tab-action {
+      opacity: .7;
+    }
 
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    .tab-action:hover {
+      opacity: 1 !important;
+      background: var(--vsc-tab-hover-background);
+    }
 
-    opacity:0;
-    border-radius:4px;
-    transform: scale(.85);
+    .tab.active .tab-action {
+      opacity: .6;
+    }
 
-    transition: all 140ms ease;
-  }
+    /* Close icon */
+    .tab-action.close::before {
+      content: "✕";
+      font-size: 13px;
+    }
 
-  .tab:hover .tab-close,
-  .tab:hover .tab-pin {
-    opacity:.75;
-    transform: scale(1);
-  }
+    /* Pinned */
+    .tab.pinned {
+      width: 42px;
+      min-width: 42px;
+      max-width: 42px;
+      justify-content: center;
+      padding: 0;
+    }
 
-  .tab-close:hover,
-  .tab-pin:hover {
-    opacity:1;
-    background: rgba(255,255,255,.12);
-  }
+    .tab.pinned .tab-title,
+    .tab.pinned .close {
+      display: none;
+    }
 
-  /* icons */
-  .tab-close::before { content:"✕"; font-size:14px; }
-  .tab-pin::before { content:"📌"; font-size:11px; }
+    /* Dirty dot */
+    .dirty-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--vsc-tab-foreground);
+    }
 
-  /* pinned */
-  .tab.pinned {
-    width:42px;
-    min-width:42px;
-    max-width:42px;
-    justify-content:center;
-    padding:0;
-  }
+    .dirty-dot.active-dirty {
+      background: var(--vsc-accent-blue);
+    }
 
-  .tab.pinned .tab-title,
-  .tab.pinned .tab-close {
-    display:none;
-  }
+    /* Compact */
+    :host-context(.compact-mode) .tab {
+      height: 100%;
+      padding: 0 10px;
+    }
 
-  /* pinned dot */
-  .tab.pinned .tab-icon::after {
-    content:'';
-    position:absolute;
-    bottom:-2px;
-    left:50%;
-    transform:translateX(-50%);
-    width:4px;
-    height:4px;
-    border-radius:50%;
-    background: var(--vsc-accent-blue);
-  }
+    :host-context(.compact-mode) .tab.pinned {
+      width: 36px;
+    }
 
-  /* compact */
-  :host-context(.compact-mode) .tab {
-    height:28px;
-    padding:0 10px;
-  }
-`]
+    /* Focus */
+    .tab:focus-visible {
+      outline: 1px solid var(--vsc-accent-blue);
+      outline-offset: -1px;
+    }
+  `]
 })
 export class TabComponent {
   @Input() tab!: TabInfo;

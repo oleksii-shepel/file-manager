@@ -17,6 +17,7 @@ import { ThemeService } from '../services/theme.service';
 import { PathHistoryViewerComponent } from './path-history-viewer.component';
 import { AddressBarComponent } from './address-bar.component';
 import { ActiveFilterState, FilterBarComponent, FilterPreset } from './filter-bar.component';
+import { TabBarComponent } from './tab-bar.component';
 
 interface BrowserPane {
   id: string;
@@ -42,7 +43,8 @@ interface BrowserPane {
     GlobalSearchComponent,
     PathHistoryViewerComponent,
     AddressBarComponent,
-    FilterBarComponent
+    FilterBarComponent,
+    TabBarComponent
   ],
   templateUrl: './file-browser.component.html',
   styleUrls: ['./file-browser.component.scss']
@@ -51,7 +53,8 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   @ViewChild(KeyboardHelpComponent) keyboardHelp?: KeyboardHelpComponent;
   @ViewChild(GlobalSearchComponent) globalSearch?: GlobalSearchComponent;
   @ViewChild(PathHistoryViewerComponent) pathHistoryViewer?: PathHistoryViewerComponent;
-
+  @ViewChild(TabBarComponent) tabBar?: TabBarComponent;
+  
   leftPane: BrowserPane = this.createEmptyPane('left');
   rightPane: BrowserPane = this.createEmptyPane('right');
   
@@ -187,8 +190,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
     }
   }
 
-  toggleTabPin(pane: BrowserPane, tabId: string, event: Event): void {
-    event.stopPropagation();
+  toggleTabPin(pane: BrowserPane, tabId: string): void {
     this.workspaceService.toggleTabPin(pane.id, tabId);
   }
 
@@ -609,7 +611,7 @@ export class FileBrowserComponent implements OnInit, OnDestroy {
   private togglePinCurrentTab(): void {
     const pane = this.getActivePane();
     const activeTab = this.getTabs(pane.id).find(t => t.isActive);
-    if (activeTab) this.toggleTabPin(pane, activeTab.id, new Event('click'));
+    if (activeTab) this.toggleTabPin(pane, activeTab.id);
   }
 
   private quickViewSelected(): void { console.log('Quick view - coming in Phase 3'); }

@@ -69,6 +69,22 @@
   --vsc-shadow: rgba(0, 0, 0, 0.36);
   --vsc-widget-shadow: 0 5px 8px 0 rgba(0, 0, 0, 0.36);
   
+  /* === Tabs === */
+  --vsc-tabbar-background: #2d2d2d;
+  --vsc-tab-background: #2d2d2d;
+  --vsc-tab-active-background: #1e1e1e;
+  --vsc-tab-hover-background: #323233;
+
+  --vsc-tab-border: #3c3c3c;
+  --vsc-tab-active-border-top: #007acc;
+
+  --vsc-tab-foreground: #969696;
+  --vsc-tab-active-foreground: #ffffff;
+  --vsc-tab-hover-foreground: #cccccc;
+
+  --vsc-tab-shadow: inset 0 -1px 0 #1e1e1e;
+  --vsc-tab-inner-shadow: inset 0 -1px 0 rgba(0,0,0,.4);
+  
   /* === Typography === */
   --vsc-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
   --vsc-font-family-mono: Consolas, "Courier New", monospace;
@@ -103,7 +119,7 @@
   --vsc-activitybar-width: 48px;
   --vsc-statusbar-height: 22px;
   
-  /* Legacy compatibility */
+  /* === Legacy compatibility === */
   --vsc-background: var(--vsc-editor-background);
   --vsc-text: var(--vsc-foreground);
   --vsc-muted: var(--vsc-foreground-dim);
@@ -145,6 +161,22 @@
   --vsc-scrollbar-track: #f3f3f3;
   --vsc-scrollbar-thumb: #c4c4c4;
   --vsc-scrollbar-thumb-hover: #a4a4a4;
+
+  /* === Tabs === */
+  --vsc-tabbar-background: #ececec;
+  --vsc-tab-background: #ececec;
+  --vsc-tab-active-background: #ffffff;
+  --vsc-tab-hover-background: #f5f5f5;
+
+  --vsc-tab-border: #d4d4d4;
+  --vsc-tab-active-border-top: #007acc;
+
+  --vsc-tab-foreground: #616161;
+  --vsc-tab-active-foreground: #000000;
+  --vsc-tab-hover-foreground: #333333;
+
+  --vsc-tab-shadow: inset 0 -1px 0 #ffffff;
+  --vsc-tab-inner-shadow: inset 0 -1px 0 rgba(0,0,0,.08);
 }
 
 /* === Compact Mode === */

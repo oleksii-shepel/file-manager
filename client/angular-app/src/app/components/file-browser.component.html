@@ -54,37 +54,15 @@
     <!-- Left Pane -->
     <div class="pane">
       <!-- Tab Bar -->
-      <div class="tab-bar">
-        <div class="tabs">
-          <div 
-            *ngFor="let tab of getTabs('left')"
-            class="tab"
-            [class.active]="tab.isActive"
-            [class.pinned]="tab.isPinned"
-            (click)="switchTab(leftPane, tab.id)"
-            [title]="tab.title"
-          >
-            <span class="tab-icon">📁</span>
-            <span class="tab-title">{{ tab.title }}</span>
-            <button 
-              *ngIf="tab.isPinned" 
-              class="tab-pin"
-              (click)="toggleTabPin(leftPane, tab.id, $event)"
-              title="Unpin tab"
-              aria-label="Unpin tab"
-            ></button>
-            <button 
-              *ngIf="!tab.isPinned" 
-              class="tab-close"
-              (click)="closeTab(leftPane, tab.id); $event.stopPropagation()"
-              title="Close tab"
-              aria-label="Close tab"
-            ></button>
-          </div>
-          <button class="tab-new" (click)="addTab(leftPane)" title="New tab">
-          </button>
-        </div>
-      </div>
+      <app-tab-bar
+          [tabs]="getTabs('left')"
+          [activeTabId]="leftPane.currentTabId"
+          [isCompact]="false"
+          (tabChange)="switchTab(leftPane, $event.id)"
+          (tabClose)="closeTab(leftPane, $event.id)"
+          (tabPin)="toggleTabPin(leftPane, $event.id)"
+          (newTab)="addTab(leftPane)"
+      ></app-tab-bar>
 
       <!-- Address Bar -->
       <app-address-bar
@@ -150,37 +128,15 @@
     <!-- Right Pane -->
     <div class="pane">
       <!-- Tab Bar -->
-      <div class="tab-bar">
-        <div class="tabs">
-          <div 
-            *ngFor="let tab of getTabs('right')"
-            class="tab"
-            [class.active]="tab.isActive"
-            [class.pinned]="tab.isPinned"
-            (click)="switchTab(rightPane, tab.id)"
-            [title]="tab.title"
-          >
-            <span class="tab-icon">📁</span>
-            <span class="tab-title">{{ tab.title }}</span>
-            <button 
-              *ngIf="tab.isPinned" 
-              class="tab-pin"
-              (click)="toggleTabPin(rightPane, tab.id, $event)"
-              title="Unpin tab"
-              aria-label="Unpin tab"
-            ></button>
-            <button 
-              *ngIf="!tab.isPinned" 
-              class="tab-close"
-              (click)="closeTab(rightPane, tab.id); $event.stopPropagation()"
-              title="Close tab"
-              aria-label="Close tab"
-            ></button>
-          </div>
-          <button class="tab-new" (click)="addTab(rightPane)" title="New tab">
-          </button>
-        </div>
-      </div>
+      <app-tab-bar
+          [tabs]="getTabs('right')"
+          [activeTabId]="rightPane.currentTabId"
+          [isCompact]="false"
+          (tabChange)="switchTab(rightPane, $event.id)"
+          (tabClose)="closeTab(rightPane, $event.id)"
+          (tabPin)="toggleTabPin(rightPane, $event.id)"
+          (newTab)="addTab(rightPane)"
+      ></app-tab-bar>
 
       <!-- Address Bar -->
       <app-address-bar
