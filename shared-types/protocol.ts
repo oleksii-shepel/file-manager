@@ -8,6 +8,7 @@
 // ============================================================================
 
 export enum CommandType {
+  LIST_DRIVES = 'LIST_DRIVES',
   LIST_DIRECTORY = 'LIST_DIRECTORY',
   READ_FILE = 'READ_FILE',
   WRITE_FILE = 'WRITE_FILE',
@@ -23,6 +24,10 @@ export interface BaseCommand {
   id: string; // Unique command ID for tracking
   type: CommandType;
   timestamp: number;
+}
+
+export interface ListDrivesCommand extends BaseCommand {
+  type: CommandType.LIST_DRIVES;
 }
 
 export interface ListDirectoryCommand extends BaseCommand {
@@ -81,7 +86,19 @@ export interface SearchFilesCommand extends BaseCommand {
   recursive?: boolean;
 }
 
+// DriveInfo type
+export interface DriveInfo {
+  name: string; // e.g. 'C:'
+  path: string; // e.g. 'C:\\'
+  type: 'fixed' | 'removable' | 'network' | 'cdrom' | 'ramdisk' | 'unknown';
+  totalSpace?: number; // bytes
+  freeSpace?: number; // bytes
+  fileSystem?: string; // e.g. 'NTFS'
+  isReady?: boolean;
+}
+
 export type Command =
+  | ListDrivesCommand
   | ListDirectoryCommand
   | ReadFileCommand
   | WriteFileCommand

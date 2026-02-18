@@ -43,7 +43,79 @@ impl CommandExecutor {
             Command::SearchFiles { path, pattern, recursive, .. } => {
                 Self::search_files(&path, &pattern, recursive)
             }
+            Command::ListDrives { .. } => {
+                Self::list_drives()
+            }
         };
+    #[cfg(target_os = "windows")]
+    fn list_drives() -> anyhow::Result<ResponseData> {
+        use std::ptr;
+        use winapi::um::fileapi::GetDriveTypeW;
+        use winapi::um::fileapi::GetDiskFreeSpaceExW;
+        use winapi::um::winbase::DRIVE_FIXED;
+        use winapi::um::winbase::DRIVE_REMOVABLE;
+        use winapi::um::winbase::DRIVE_CDROM;
+        use winapi::um::winbase::DRIVE_RAMDISK;
+        use winapi::um::winbase::DRIVE_REMOTE;
+        use winapi::um::fileapi::GetLogicalDriveStringsW;
+        use widestring::U16CString;
+
+        let mut buffer = [0u16; 256];
+        let len = unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
+        let mut drives = Vec::new();
+        let mut i = 0;
+        while i < len as usize {
+            let start = i;
+            while i < len as usize && buffer[i] != 0 {
+                i += 1;
+            }
+            if start == i {
+                i += 1;
+                continue;
+            }
+            let drive = U16CString::from_vec_with_nul(&buffer[start..=i]).unwrap();
+            let drive_str = drive.to_string_lossy();
+            let drive_type = unsafe { GetDriveTypeW(drive.as_ptr()) };
+            let (total_space, free_space) = {
+                let mut free = 0u64;
+                let mut total = 0u64;
+                let mut _total_free = 0u64;
+                let ok = unsafe {
+                    GetDiskFreeSpaceExW(
+                        drive.as_ptr(),
+                        &mut free,
+                        &mut total,
+                        &mut _total_free,
+                    )
+                };
+                if ok != 0 { (total, free) } else { (0, 0) }
+            };
+            let drive_type_str = match drive_type {
+                DRIVE_FIXED => "fixed",
+                DRIVE_REMOVABLE => "removable",
+                DRIVE_CDROM => "cdrom",
+                DRIVE_RAMDISK => "ramdisk",
+                DRIVE_REMOTE => "network",
+                _ => "unknown",
+            };
+            drives.push(crate::protocol::DriveInfo {
+                name: drive_str.trim_end_matches('\0').to_string(),
+                path: drive_str.trim_end_matches('\0').to_string(),
+                drive_type: drive_type_str.to_string(),
+                total_space,
+                free_space,
+                file_system: None,
+            });
+            i += 1;
+        }
+        Ok(ResponseData::DrivesList(crate::protocol::DrivesList { drives }))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn list_drives() -> anyhow::Result<ResponseData> {
+        // TODO: Implement for Unix/Linux/Mac
+        Ok(ResponseData::DrivesList(crate::protocol::DrivesList { drives: vec![] }))
+    }
 
         match result {
             Ok(data) => Response::Success {

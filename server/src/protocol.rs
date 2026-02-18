@@ -15,6 +15,11 @@ pub enum Command {
         #[serde(default)]
         show_hidden: bool,
     },
+    #[serde(rename = "LIST_DRIVES")]
+    ListDrives {
+        id: String,
+        timestamp: i64,
+    },
     
     #[serde(rename = "READ_FILE")]
     ReadFile {
@@ -101,7 +106,16 @@ impl Command {
             Command::CopyFile { id, .. } => id,
             Command::GetFileInfo { id, .. } => id,
             Command::SearchFiles { id, .. } => id,
-        }
+            Command::ListDrives { id, .. } => id,
+            Command::ListDirectory { id, .. } => id,
+            Command::ReadFile { id, .. } => id,
+            Command::WriteFile { id, .. } => id,
+            Command::DeleteFile { id, .. } => id,
+            Command::CreateDirectory { id, .. } => id,
+            Command::MoveFile { id, .. } => id,
+            Command::CopyFile { id, .. } => id,
+            Command::GetFileInfo { id, .. } => id,
+            Command::SearchFiles { id, .. } => id,
     }
 }
 
@@ -143,6 +157,21 @@ pub enum ResponseData {
     FileInfo(FileInfo),
     OperationResult(OperationResult),
     SearchResult(SearchResult),
+    DrivesList(DrivesList),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriveInfo {
+    pub name: String, // e.g. 'C:'
+    pub path: String, // e.g. 'C:\\'
+    pub drive_type: String, // e.g. 'fixed', 'removable', etc.
+    pub total_space: u64,
+    pub free_space: u64,
+    pub file_system: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrivesList {
+    pub drives: Vec<DriveInfo>,
 }
 
 // ============================================================================

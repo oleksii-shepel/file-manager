@@ -1,3 +1,4 @@
+
 import { Injectable } from '@angular/core';
 import { Observable, Subject, from } from 'rxjs';
 import {
@@ -21,6 +22,7 @@ import {
   WebSocketMessage,
   MessageType,
 } from '@shared/protocol';
+import { ListDrivesCommand, DriveInfo } from '@shared/protocol-enhanced';
 
 @Injectable({
   providedIn: 'root'
@@ -113,6 +115,24 @@ export class ApiService {
     return `cmd-${Date.now()}-${++this.commandCounter}`;
   }
 
+  /**
+   * List available drives (Windows only for now)
+   */
+  async listDrives(): Promise<DriveInfo[]> {
+    const command: ListDrivesCommand = {
+      type: CommandType.LIST_DRIVES,
+      id: this.generateCommandId(),
+      timestamp: Date.now(),
+    };
+
+    const response = await this.sendHttpCommand(command);
+    if (response.status === 'ERROR') {
+      throw new Error(response.error.message);
+    }
+    // Response data is { drives: DriveInfo[] }
+    return response.data.drives;
+  }
+  
   /**
    * List directory contents
    */
