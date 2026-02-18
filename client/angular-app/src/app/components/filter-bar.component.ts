@@ -559,7 +559,7 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
   @Output() contentAnalyzed = new EventEmitter<ContentAnalysis>();
 
   isOpen        = false;
-  combineMode: 'AND' | 'OR' = 'AND';
+  combineMode: 'AND' | 'OR' = 'OR';
   focusedIdx    = -1;
   groupedPresets: FilterGroup[] = [];
   dropPos       = { top: 0, left: 0 };
@@ -579,19 +579,20 @@ export class FilterBarComponent implements OnInit, OnDestroy, OnChanges {
     const categoryChipIds = new Set<string>();
     const chips: Array<{ preset: FilterPreset; count: number; isExtra: boolean }> = [];
 
-    // Build category chips
+    // Build category chips - ONLY show if they have files (count > 0) or are active
     for (const cat of DEFAULT_FILE_CATEGORIES) {
       const extSet = new Set(cat.extensions);
-      const count  = this.dataset.filter(f =>
+      const count = this.dataset.filter(f =>
         f.type !== FileType.DIRECTORY &&
         extSet.has((f.name.split('.').pop() ?? '').toLowerCase())
       ).length;
 
-      // Show if dataset has matches, OR if no dataset yet (show all), OR if already active
+      // Show if dataset has matches OR if already active
+      // Removed: this.dataset.length === 0 condition
       const catPreset = this.categoryToPreset(cat, count);
       categoryChipIds.add(catPreset.id);
 
-      if (count > 0 || this.dataset.length === 0 || this.isSelected(catPreset)) {
+      if (count > 0 || this.isSelected(catPreset)) {
         chips.push({ preset: catPreset, count, isExtra: false });
       }
     }
