@@ -390,10 +390,12 @@ function parentPath(p: string): string {
         
         <div class="ab-drive-grid-details">
           <div class="ab-drive-grid-space" *ngIf="d.totalSpace > 0">
-            <span>{{ formatSize(d.freeSpace) }} free</span>
-            <span>of {{ formatSize(d.totalSpace) }}</span>
+            <div class="ab-drive-grid-space-labels">
+              <span class="ab-drive-grid-space-free">{{ formatSize(d.freeSpace) }} free</span>
+              <span>of {{ formatSize(d.totalSpace) }}</span>
+            </div>
             <div class="ab-drive-space-bar">
-              <div class="ab-drive-space-fill" 
+              <div class="ab-drive-space-fill"
                    [style.width.%]="(d.freeSpace / d.totalSpace) * 100"></div>
             </div>
           </div>
@@ -448,7 +450,7 @@ function parentPath(p: string): string {
       font-size: var(--vsc-font-size);
       color: var(--vsc-foreground);
       background: var(--vsc-sidebar-background);
-      z-index: var(--vsc-z-base);
+      /* z-index removed: creates a stacking context that traps fixed children */
     }
 
     .ab-host {
@@ -661,8 +663,8 @@ function parentPath(p: string): string {
       border-radius: var(--vsc-border-radius-sm);
       font-family: var(--vsc-font-family-mono);
       font-weight: 600;
-      padding: 0 var(--vsc-padding-sm);
-      margin-right: 0;
+      padding: 0 var(--vsc-padding-lg) !important;
+      margin-right: var(--vsc-padding-md) !important;
       cursor: pointer;
       border: none;
       
@@ -692,7 +694,7 @@ function parentPath(p: string): string {
       width: 20px;
       height: 24px;
       padding: 0;
-      background: transparent;
+      background: transparent !important;
       border: none;
       color: var(--vsc-foreground-dim);
       font-size: 16px;
@@ -742,27 +744,25 @@ function parentPath(p: string): string {
   position: absolute;
   min-width: 220px;
   max-width: 340px;
-  background: var(--vsc-panel-background) !important; /* Force solid */
+  background-color: var(--vsc-panel-background, #252526) !important;
+  background-image: none !important;
   border: 1px solid var(--vsc-border);
   border-radius: var(--vsc-border-radius);
   box-shadow: var(--vsc-widget-shadow);
-  z-index: var(--vsc-z-modal);
+  z-index: 9999;
   overflow: hidden;
   animation: ab-appear var(--vsc-transition-fast) cubic-bezier(0.4, 0, 0.2, 1);
+  isolation: isolate;
   
-  /* All dropdown children should have appropriate backgrounds */
   .ab-drop-head,
   .ab-drop-scroll,
   .ab-drop-footer,
   .ab-drop-loading,
   .ab-drop-empty {
-    background: var(--vsc-panel-background);
+    background-color: var(--vsc-panel-background, #252526) !important;
   }
   
-  /* Scrollable content area */
   .ab-drop-scroll {
-    background: var(--vsc-panel-background);
-    
     .ab-drop-item {
       background: transparent;
       
@@ -1069,43 +1069,38 @@ function parentPath(p: string): string {
   min-width: 320px;
   max-width: 500px;
   padding: 0;
-  z-index: calc(var(--vsc-z-modal) + 100) !important;
+  z-index: 9999 !important;
   position: fixed !important;
-  background: var(--vsc-panel-background) !important; /* Force solid background */
+  background-color: var(--vsc-panel-background, #252526) !important;
+  background-image: none !important;
   border: 1px solid var(--vsc-border);
   border-radius: var(--vsc-border-radius);
   box-shadow: var(--vsc-widget-shadow);
+  isolation: isolate;
   
-  /* Ensure all child elements have solid backgrounds */
-  * {
-    background: transparent; /* Reset individual backgrounds */
-  }
-  
-  /* Specific elements that need solid backgrounds */
   .ab-drop-head {
-    background: var(--vsc-panel-background) !important;
+    background-color: var(--vsc-panel-background, #252526) !important;
     border-bottom: 1px solid var(--vsc-border-subtle);
   }
   
   .ab-drive-grid {
-    background: var(--vsc-panel-background) !important;
+    background-color: var(--vsc-panel-background, #252526) !important;
     
-    /* Grid items keep their own backgrounds */
     .ab-drive-grid-item {
-      background: var(--vsc-sidebar-background);
+      background-color: var(--vsc-sidebar-background, #1e1e1e) !important;
       
       &:hover {
-        background: var(--vsc-list-hover-background);
+        background-color: var(--vsc-list-hover-background) !important;
       }
       
       &.ab-drive-grid-item--active {
-        background: var(--vsc-list-active-background);
+        background-color: var(--vsc-list-active-background) !important;
       }
     }
   }
   
   .ab-drop-footer {
-    background: var(--vsc-panel-background) !important;
+    background-color: var(--vsc-panel-background, #252526) !important;
     border-top: 1px solid var(--vsc-border-subtle);
   }
 }
@@ -1201,9 +1196,10 @@ function parentPath(p: string): string {
     .ab-drive-grid-details {
       display: flex;
       flex-direction: column;
-      gap: var(--vsc-padding-xs);
+      gap: 5px;
       font-size: 11px;
       color: var(--vsc-foreground-dim);
+      margin-top: 2px;
     }
 
     .ab-drive-grid-path {
@@ -1217,13 +1213,25 @@ function parentPath(p: string): string {
 
     .ab-drive-grid-space {
       display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ab-drive-grid-space-labels {
+      display: flex;
       align-items: center;
-      gap: var(--vsc-padding-xs);
+      justify-content: space-between;
       font-size: 10px;
+      color: var(--vsc-foreground-dim);
+    }
+
+    .ab-drive-grid-space-free {
+      font-weight: 600;
+      color: var(--vsc-foreground);
     }
 
     .ab-drive-space-bar {
-      flex: 1;
+      width: 100%;
       height: 4px;
       background: var(--vsc-border-subtle);
       border-radius: 2px;
@@ -1456,7 +1464,7 @@ function parentPath(p: string): string {
       
       .ab-drive-letter {
         font-size: var(--vsc-font-size-small);
-        padding: 0 var(--vsc-padding-sm);
+        padding: 0 var(--vsc-padding-md);
         height: 22px;
         line-height: 22px;
       }
@@ -1609,6 +1617,14 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
 
   onDriveLetterClick(seg: PathSegment, e: MouseEvent): void {
     e.stopPropagation();
+    
+    // If drive menu is already showing, just close it
+    if (this.showDriveMenu) {
+      this.showDriveMenu = false;
+      return;
+    }
+    
+    // Close other dropdowns
     this.closeAll();
     
     const rect = (e.target as HTMLElement).getBoundingClientRect();
