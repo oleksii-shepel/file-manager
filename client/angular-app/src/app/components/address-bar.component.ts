@@ -1643,8 +1643,31 @@ export class AddressBarComponent implements OnInit, OnDestroy, OnChanges {
 
   switchToDrive(drive: DriveInfo): void {
     this.showDriveMenu = false;
-    if (drive.path !== this.currentPath) {
-      this.navigateTo(drive.path);
+    // Determine drive root:
+    // - Windows drive letters -> "C:/"
+    // - UNC paths -> "//server/share"
+    // - Fallback to provided path or '/'
+    const raw = (drive.path || drive.name || '').toString();
+    let target = raw;
+
+    if (/^[A-Za-z]:/.test(raw)) {
+      // always navigate to drive root (keep forward-slash for normalization)
+      target = raw.slice(0, 2) + '/';
+    } else {
+      // Normalize slashes for UNC detection
+      const n = raw.replace(/\\+/g, '/');
+      if (n.startsWith('//')) {
+        const parts = n.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          target = '//' + parts[0] + '/' + parts[1];
+        } else {
+          target = n;
+        }
+      }
+    }
+
+    if (target && target !== this.currentPath) {
+      this.navigateTo(target);
     }
   }
 
