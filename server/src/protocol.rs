@@ -125,6 +125,7 @@ impl Command {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status")]
+#[serde(rename_all = "camelCase")]
 pub enum Response {
     #[serde(rename = "SUCCESS")]
     Success {
@@ -167,6 +168,7 @@ pub enum ResponseData {
 
 /// High-level information about the host operating system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OsInfo {
     /// `"windows"`, `"linux"`, `"macos"`, or `"unknown"`
     pub os: String,
@@ -186,6 +188,7 @@ pub struct OsInfo {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DriveInfo {
     /// Display name, e.g. `"C:"` on Windows or `"sda1"` on Linux
     pub name: String,
@@ -199,6 +202,7 @@ pub struct DriveInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DrivesList {
     pub drives: Vec<DriveInfo>,
 }
@@ -216,6 +220,7 @@ pub enum FileType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileInfo {
     pub name: String,
     /// Absolute path — always includes drive letter on Windows
@@ -231,6 +236,7 @@ pub struct FileInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DirectoryListing {
     pub path: String,
     pub entries: Vec<FileInfo>,
@@ -238,6 +244,7 @@ pub struct DirectoryListing {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileContent {
     pub path: String,
     pub content: String,
@@ -246,6 +253,7 @@ pub struct FileContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OperationResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,6 +263,7 @@ pub struct OperationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub path: String,
     pub matches: Vec<FileInfo>,

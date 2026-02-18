@@ -154,6 +154,7 @@ export class ApiService {
   async listDrives(): Promise<DriveInfo[]> {
     const command: ListDrivesCommand = this.baseCommand(CommandType.LIST_DRIVES);
     const response = await this.sendHttpCommand<DrivesList>(command);
+    console.log(response);
     return this.unwrap(response).drives;
   }
 
