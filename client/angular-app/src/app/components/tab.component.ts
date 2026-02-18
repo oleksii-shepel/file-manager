@@ -54,7 +54,7 @@ import { TabInfo } from "@shared/protocol-enhanced";
       border-right: 1px solid var(--vsc-tab-border);
       border-left: 1px solid transparent;
       border-top: 1px solid transparent;
-      box-shadow: var(--vsc-tab-shadow);
+      border-bottom: 1px solid transparent;
       transition:
         background var(--vsc-transition-fast),
         color var(--vsc-transition-fast);
@@ -81,6 +81,7 @@ import { TabInfo } from "@shared/protocol-enhanced";
       border-left-color: var(--vsc-tab-border);
       border-right-color: var(--vsc-tab-border);
       border-top-color: var(--vsc-tab-active-border-top);
+      border-bottom: 1px solid transparent;
       position: relative;
       z-index: 5;
     }
