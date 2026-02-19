@@ -24,6 +24,11 @@ pub async fn handle_command(
         Command::CopyFile { source, destination, .. } => tracing::info!("Processing CopyFile from {} to {}", source, destination),
         Command::GetFileInfo { path, .. } => tracing::info!("Processing GetFileInfo for path: {}", path),
         Command::SearchFiles { path, pattern, .. } => tracing::info!("Processing SearchFiles in {} for pattern: {}", path, pattern),
+        // Archive-related commands
+        Command::ListArchive { archive_path, inner_path, .. } => tracing::info!("Processing ListArchive: {} (inner: {})", archive_path, inner_path),
+        Command::ReadArchiveFile { archive_path, inner_path, .. } => tracing::info!("Processing ReadArchiveFile: {} (inner: {})", archive_path, inner_path),
+        Command::ExtractArchive { archive_path, destination, .. } => tracing::info!("Processing ExtractArchive: {} -> {}", archive_path, destination),
+        _ => tracing::info!("Processing command"),
     }
     
     // Execute command

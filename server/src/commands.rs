@@ -61,6 +61,15 @@ impl CommandExecutor {
             Command::GetOsInfo { .. } => {
                 Self::get_os_info()
             }
+            Command::ListArchive { archive_path, inner_path, .. } => {
+                Self::list_archive(&archive_path, &inner_path)
+            }
+            Command::ReadArchiveFile { archive_path, inner_path, encoding, .. } => {
+                Self::read_archive_file(&archive_path, &inner_path, encoding.as_deref())
+            }
+            Command::ExtractArchive { archive_path, destination, inner_paths, .. } => {
+                Self::extract_archive(&archive_path, &destination, &inner_paths)
+            }
         };
 
         match result {
@@ -683,6 +692,39 @@ impl CommandExecutor {
             path,
             matches,
             total_matches,
+        }))
+    }
+
+    // -------------------------------------------------------------------------
+    // Archive operations
+    // -------------------------------------------------------------------------
+
+    fn list_archive(archive_path: &str, inner_path: &str) -> Result<ResponseData> {
+        let listing = crate::archive::list_archive(archive_path, inner_path)?;
+        Ok(ResponseData::ArchiveListing(listing))
+    }
+
+    fn read_archive_file(path: &str, inner: &str, encoding: Option<&str>) -> Result<ResponseData> {
+        let bytes = crate::archive::read_archive_file(path, inner)?;
+        let (content, enc) = match encoding {
+            Some("base64") | None => (BASE64_ENGINE.encode(&bytes), "base64".to_string()),
+            Some("utf8") => (String::from_utf8_lossy(&bytes).to_string(), "utf-8".to_string()),
+            Some(e) => anyhow::bail!("Unsupported encoding: {}", e),
+        };
+        Ok(ResponseData::FileContent(FileContent {
+            path: path.to_string(),
+            content,
+            encoding: enc,
+            size: bytes.len() as u64,
+        }))
+    }
+
+    fn extract_archive(path: &str, destination: &str, inner_paths: &[String]) -> Result<ResponseData> {
+        let extracted = crate::archive::extract_archive(path, destination, inner_paths)?;
+        Ok(ResponseData::OperationResult(OperationResult {
+            success: true,
+            message: Some(format!("Extracted {} entries", extracted.len())),
+            affected_paths: Some(extracted),
         }))
     }
 
