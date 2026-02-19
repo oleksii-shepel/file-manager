@@ -1,6 +1,41 @@
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
+// OS Info
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OsInfo {
+    pub os: String,
+    pub version: String,
+    pub arch: String,
+    pub hostname: String,
+    pub system_drive: Option<String>,
+}
+
+// ============================================================================
+// Drives
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveInfo {
+    pub name: String,
+    pub path: String,
+    pub drive_type: String,
+    pub total_space: u64,
+    pub free_space: u64,
+    pub file_system: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrivesList {
+    pub drives: Vec<DriveInfo>,
+}
+
+// ============================================================================
 // Commands (Client -> Server)
 // ============================================================================
 
@@ -99,6 +134,44 @@ pub enum Command {
         #[serde(default)]
         recursive: bool,
     },
+
+    /// List the contents of an archive at `archive_path`, optionally under
+    /// a sub-directory `inner_path` within the archive.
+    #[serde(rename = "LIST_ARCHIVE")]
+    ListArchive {
+        id: String,
+        timestamp: i64,
+        /// Absolute path to the archive file on disk.
+        archive_path: String,
+        /// Path inside the archive to list (empty string = root).
+        #[serde(default)]
+        inner_path: String,
+    },
+
+    /// Extract a single file from an archive and return its contents.
+    #[serde(rename = "READ_ARCHIVE_FILE")]
+    ReadArchiveFile {
+        id: String,
+        timestamp: i64,
+        archive_path: String,
+        /// Path of the file inside the archive.
+        inner_path: String,
+        #[serde(default)]
+        encoding: Option<String>,
+    },
+
+    /// Extract one or more entries from an archive to a destination directory.
+    #[serde(rename = "EXTRACT_ARCHIVE")]
+    ExtractArchive {
+        id: String,
+        timestamp: i64,
+        archive_path: String,
+        /// Destination directory on the filesystem.
+        destination: String,
+        /// Optional list of inner paths to extract; if empty, extract all.
+        #[serde(default)]
+        inner_paths: Vec<String>,
+    },
 }
 
 impl Command {
@@ -115,6 +188,9 @@ impl Command {
             Command::CopyFile { id, .. } => id,
             Command::GetFileInfo { id, .. } => id,
             Command::SearchFiles { id, .. } => id,
+            Command::ListArchive { id, .. } => id,
+            Command::ReadArchiveFile { id, .. } => id,
+            Command::ExtractArchive { id, .. } => id,
         }
     }
 }
@@ -160,51 +236,7 @@ pub enum ResponseData {
     SearchResult(SearchResult),
     DrivesList(DrivesList),
     OsInfo(OsInfo),
-}
-
-// ============================================================================
-// OS Info
-// ============================================================================
-
-/// High-level information about the host operating system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsInfo {
-    /// `"windows"`, `"linux"`, `"macos"`, or `"unknown"`
-    pub os: String,
-    /// Human-readable version string (e.g. `"10.0.22621"` or `"22.04"`)
-    pub version: String,
-    /// Architecture string (e.g. `"x86_64"`, `"aarch64"`)
-    pub arch: String,
-    /// Hostname of the machine
-    pub hostname: String,
-    /// On Windows, the system drive root that all absolute paths are relative to
-    /// (e.g. `"C:\\"`) — `None` on non-Windows systems.
-    pub system_drive: Option<String>,
-}
-
-// ============================================================================
-// Drives
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DriveInfo {
-    /// Display name, e.g. `"C:"` on Windows or `"sda1"` on Linux
-    pub name: String,
-    /// Mount / root path — always includes drive letter on Windows, e.g. `"C:\\"`
-    pub path: String,
-    /// `"fixed"`, `"removable"`, `"cdrom"`, `"network"`, `"ramdisk"`, or `"unknown"`
-    pub drive_type: String,
-    pub total_space: u64,
-    pub free_space: u64,
-    pub file_system: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DrivesList {
-    pub drives: Vec<DriveInfo>,
+    ArchiveListing(ArchiveListing),
 }
 
 // ============================================================================
@@ -223,7 +255,6 @@ pub enum FileType {
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
     pub name: String,
-    /// Absolute path — always includes drive letter on Windows
     pub path: String,
     #[serde(rename = "type")]
     pub file_type: FileType,
@@ -268,6 +299,54 @@ pub struct SearchResult {
     pub path: String,
     pub matches: Vec<FileInfo>,
     pub total_matches: usize,
+}
+
+// ============================================================================
+// Archive Data Types
+// ============================================================================
+
+/// A single entry inside an archive (file or directory).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveEntry {
+    /// File/directory name (last component of `inner_path`).
+    pub name: String,
+    /// Full path inside the archive, using forward slashes.
+    pub inner_path: String,
+    /// `"FILE"` or `"DIRECTORY"`.
+    #[serde(rename = "type")]
+    pub entry_type: ArchiveEntryType,
+    /// Uncompressed size in bytes (0 for directories).
+    pub size: u64,
+    /// Compressed size in bytes (0 for directories / unsupported formats).
+    pub compressed_size: u64,
+    /// Unix timestamp of the last-modified time (0 if unknown).
+    pub modified: i64,
+    /// Compression method string, e.g. `"Deflate"`, `"Stored"`, `"BZip2"`, etc.
+    pub compression: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ArchiveEntryType {
+    File,
+    Directory,
+}
+
+/// Response for LIST_ARCHIVE.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveListing {
+    /// Absolute path to the archive on disk.
+    pub archive_path: String,
+    /// The inner path that was listed (empty string = root).
+    pub inner_path: String,
+    /// Format detected: `"zip"`, `"tar"`, `"tar.gz"`, `"tar.bz2"`, `"tar.xz"`, `"tar.zst"`, `"gz"`, `"bz2"`, `"xz"`, `"zst"`.
+    pub format: String,
+    /// Direct children of `inner_path`.
+    pub entries: Vec<ArchiveEntry>,
+    /// Total uncompressed size of all entries in this listing level.
+    pub total_size: u64,
 }
 
 // ============================================================================
