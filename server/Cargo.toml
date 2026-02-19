@@ -17,22 +17,25 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.21"
 futures-util = "0.3"
+which = "5.0"                    # For finding external tools
+tempfile = "3.8"                  # For temporary directories in fallback operations
 
-# Archive support (existing)
+# Existing archive support
 zip = "0.6"
 tar = "0.4"
 flate2 = "1"
 bzip2 = "0.4"
-xz2 = "1"
+xz2 = "0.1"
 zstd = "0.13"
 
-# Additional archive formats
-sevenz-rust = "0.5"           # 7z support
-rar = "0.2"                   # RAR support
-cab = "0.4"                   # CAB support
-arj = "0.2"                   # ARJ support
-lzh = "0.2"                   # LZH support
-ace = "0.1"                   # ACE support
+# 7z support - latest version
+sevenz-rust = { version = "0.6", features = ["aes256", "compress"] }
+
+# Alternative RAR support (if needed - sevenz-rust can handle RAR through codecs)
+# unrar = "0.5"  # Optional if you need dedicated RAR support
+
+# CAB support
+cab = "0.4"
 
 # Platform-specific
 [target.'cfg(windows)'.dependencies]

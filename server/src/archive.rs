@@ -1,1619 +1,376 @@
-use std::collections::HashMap;
-use std::io::{self, Read, Write, Seek};
-use std::path::{Path, PathBuf};
-
-use anyhow::{bail, Context, Result};
-use chrono::TimeZone;
+use anyhow::{anyhow, Context, Result};
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+use std::process::Command;
 
 use crate::protocol::{ArchiveEntry, ArchiveEntryType, ArchiveListing};
 
-// ============================================================================
-// Format Detection
-// ============================================================================
+// =======================
+// Archive Format Detection
+// =======================
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum ArchiveFormat {
-    // Existing formats
     Zip,
-    Tar,
-    TarGz,
-    TarBz2,
-    TarXz,
-    TarZst,
-    Gz,   // single-file gzip
-    Bz2,  // single-file bzip2
-    Xz,   // single-file xz
-    Zst,  // single-file zstd
-    
-    // New formats
-    SevenZip, // 7z
-    Rar,
-    Cab,
-    Arj,
-    Lzh,
-    Ace,
+    SevenZip,
 }
 
 impl ArchiveFormat {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            // Existing
-            ArchiveFormat::Zip => "zip",
-            ArchiveFormat::Tar => "tar",
-            ArchiveFormat::TarGz => "tar.gz",
-            ArchiveFormat::TarBz2 => "tar.bz2",
-            ArchiveFormat::TarXz => "tar.xz",
-            ArchiveFormat::TarZst => "tar.zst",
-            ArchiveFormat::Gz => "gz",
-            ArchiveFormat::Bz2 => "bz2",
-            ArchiveFormat::Xz => "xz",
-            ArchiveFormat::Zst => "zst",
-            
-            // New
-            ArchiveFormat::SevenZip => "7z",
-            ArchiveFormat::Rar => "rar",
-            ArchiveFormat::Cab => "cab",
-            ArchiveFormat::Arj => "arj",
-            ArchiveFormat::Lzh => "lzh",
-            ArchiveFormat::Ace => "ace",
-        }
-    }
-
-    /// Detect archive format from the file name (extension).
     pub fn detect(path: &str) -> Option<Self> {
         let lower = path.to_lowercase();
-        
-        // Existing formats
-        if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
-            Some(ArchiveFormat::TarGz)
-        } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") || lower.ends_with(".tbz") {
-            Some(ArchiveFormat::TarBz2)
-        } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
-            Some(ArchiveFormat::TarXz)
-        } else if lower.ends_with(".tar.zst") || lower.ends_with(".tar.zstd") || lower.ends_with(".tzst") {
-            Some(ArchiveFormat::TarZst)
-        } else if lower.ends_with(".tar") {
-            Some(ArchiveFormat::Tar)
-        } else if lower.ends_with(".zip") || lower.ends_with(".jar") || lower.ends_with(".war")
-            || lower.ends_with(".ear") || lower.ends_with(".apk") || lower.ends_with(".docx")
-            || lower.ends_with(".xlsx") || lower.ends_with(".pptx") || lower.ends_with(".odt")
-            || lower.ends_with(".ods") || lower.ends_with(".odp")
-        {
-            Some(ArchiveFormat::Zip)
-        } else if lower.ends_with(".gz") {
-            Some(ArchiveFormat::Gz)
-        } else if lower.ends_with(".bz2") {
-            Some(ArchiveFormat::Bz2)
-        } else if lower.ends_with(".xz") {
-            Some(ArchiveFormat::Xz)
-        } else if lower.ends_with(".zst") || lower.ends_with(".zstd") {
-            Some(ArchiveFormat::Zst)
-        }
-        // New formats
-        else if lower.ends_with(".7z") {
-            Some(ArchiveFormat::SevenZip)
-        } else if lower.ends_with(".rar") {
-            Some(ArchiveFormat::Rar)
-        } else if lower.ends_with(".cab") {
-            Some(ArchiveFormat::Cab)
-        } else if lower.ends_with(".arj") {
-            Some(ArchiveFormat::Arj)
-        } else if lower.ends_with(".lzh") || lower.ends_with(".lha") {
-            Some(ArchiveFormat::Lzh)
-        } else if lower.ends_with(".ace") {
-            Some(ArchiveFormat::Ace)
+        if lower.ends_with(".zip") {
+            Some(Self::Zip)
+        } else if lower.ends_with(".7z") {
+            Some(Self::SevenZip)
         } else {
             None
         }
     }
 }
 
-// ============================================================================
-// Helper: normalise inner paths
-// ============================================================================
+// =======================
+// Backend Trait
+// =======================
 
-/// Strip leading slashes, normalise to forward slashes, remove trailing slash.
-fn normalise_inner(p: &str) -> String {
-    let s = p.replace('\\', "/");
-    let s = s.trim_start_matches('/');
-    let s = s.trim_end_matches('/');
-    s.to_string()
+trait ArchiveBackend {
+    fn read_file(path: &str, inner: &str) -> Result<Vec<u8>>;
+    fn extract(path: &str, dest: &str, files: &[String]) -> Result<Vec<String>>;
+    fn list(path: &str, inner: &str) -> Result<ArchiveListing>;
 }
 
-/// Returns `true` if `entry` is a direct child of `parent` (both normalised).
-/// parent = "" means top-level.
-fn is_direct_child(entry: &str, parent: &str) -> bool {
-    if parent.is_empty() {
-        // entry must not contain '/'
-        !entry.contains('/')
-    } else {
-        entry.starts_with(&format!("{}/", parent))
-            && !entry[parent.len() + 1..].contains('/')
-    }
-}
+// =======================
+// ZIP BACKEND
+// =======================
 
-/// Returns the direct-child key of `entry` relative to `parent`.
-/// e.g. entry="a/b/c", parent="a" → "a/b"
-fn direct_child_path(entry: &str, parent: &str) -> String {
-    if parent.is_empty() {
-        entry.split('/').next().unwrap_or(entry).to_string()
-    } else {
-        let rest = &entry[parent.len() + 1..];
-        let child_name = rest.split('/').next().unwrap_or(rest);
-        format!("{}/{}", parent, child_name)
-    }
-}
+struct ZipBackend;
 
-// ============================================================================
-// ZIP listing (existing)
-// ============================================================================
-
-pub fn list_zip(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    let mut zip = zip::ZipArchive::new(file).context("Not a valid ZIP archive")?;
-
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for i in 0..zip.len() {
-        let entry = zip.by_index(i).context("Error reading ZIP entry")?;
-        let raw_name = entry.name();
-        let name = normalise_inner(raw_name);
-
-        if name.is_empty() {
-            continue;
-        }
-
-        let is_child = if parent.is_empty() {
-            true
+impl ZipBackend {
+    fn open_entry<'a>(
+        zip: &'a mut zip::ZipArchive<File>,
+        target: &str,
+    ) -> Result<zip::read::ZipFile<'a>> {
+        let name = if zip.file_names().any(|n| n == target) {
+            target.to_string()
         } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
+            format!("{}/", target)
+        };
+        let file = zip
+            .by_name(&name)
+            .with_context(|| format!("Entry '{}' not found", target))?;
+        Ok(file)
+    }
+}
+
+impl ArchiveBackend for ZipBackend {
+    fn read_file(path: &str, inner: &str) -> Result<Vec<u8>> {
+        let file = File::open(path)?;
+        let mut zip = zip::ZipArchive::new(file)?;
+        let target = inner.replace('\\', "/");
+        let mut entry = Self::open_entry(&mut zip, &target)?;
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf)?;
+        Ok(buf)
+    }
+
+    fn extract(path: &str, dest: &str, files: &[String]) -> Result<Vec<String>> {
+        let file = File::open(path)?;
+        let mut zip = zip::ZipArchive::new(file)?;
+        let mut extracted = Vec::new();
+
+        for name in files {
+            let mut entry = Self::open_entry(&mut zip, name)?;
+            let out_path = Path::new(dest).join(name);
+
+            if entry.name().ends_with('/') {
+                std::fs::create_dir_all(&out_path)?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                let mut outfile = File::create(&out_path)?;
+                std::io::copy(&mut entry, &mut outfile)?;
+            }
+            extracted.push(name.clone());
+        }
+        Ok(extracted)
+    }
+
+    fn list(path: &str, inner: &str) -> Result<ArchiveListing> {
+        let file = File::open(path)?;
+        let mut zip = zip::ZipArchive::new(file)?;
+        let prefix = inner.replace('\\', "/");
+        let prefix_norm = if prefix.is_empty() || prefix.ends_with('/') {
+            prefix.clone()
+        } else {
+            format!("{}/", prefix)
         };
 
-        if !is_child || name == parent {
-            continue;
-        }
+        let mut entries = Vec::new();
 
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&child_path)
-            .to_string();
+        for i in 0..zip.len() {
+            let entry = zip.by_index(i)?;
+            let raw_name = entry.name();
+            let name = raw_name.replace('\\', "/");
 
-        if child_path == name {
+            // Filter by inner path
+            if !prefix.is_empty() && !name.starts_with(&prefix_norm) {
+                continue;
+            }
+
+            // Determine inner path relative to listing root
+            let rel_path = if prefix.is_empty() {
+                name.clone()
+            } else {
+                name[prefix_norm.len()..].to_string()
+            };
+
+            // Skip if not direct child (for directory listing we want only immediate children)
+            if rel_path.contains('/') {
+                continue;
+            }
+
             let is_dir = entry.is_dir();
-            let modified = entry
-                .last_modified()
-                .map(|t| {
-                    chrono::Utc
-                        .with_ymd_and_hms(
-                            t.year() as i32,
-                            t.month() as u32,
-                            t.day() as u32,
-                            t.hour() as u32,
-                            t.minute() as u32,
-                            t.second() as u32,
-                        )
-                        .single()
-                        .map(|dt| dt.timestamp())
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
+            let size = entry.size();
+            let compressed = entry.compressed_size();
+
+            let dt = entry.last_modified();
+
+            let modified =
+                chrono::NaiveDate::from_ymd_opt(dt.year() as i32, dt.month() as u32, dt.day() as u32)
+                    .and_then(|date| {
+                        date.and_hms_opt(dt.hour() as u32, dt.minute() as u32, dt.second() as u32)
+                    })
+                    .map(|dt| dt.and_utc().timestamp())
+                    .unwrap_or(0);
 
             let compression = format!("{:?}", entry.compression());
 
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
+            let archive_entry = ArchiveEntry {
+                name: rel_path.clone(),
+                inner_path: rel_path,
                 entry_type: if is_dir {
                     ArchiveEntryType::Directory
                 } else {
                     ArchiveEntryType::File
                 },
-                size: entry.size(),
-                compressed_size: entry.compressed_size(),
+                size,
+                compressed_size: compressed,
                 modified,
                 compression,
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "Stored".to_string(),
-            });
+            };
+
+            entries.push(archive_entry);
         }
+
+        let total_size = entries.iter().map(|e| e.size).sum();
+
+        Ok(ArchiveListing {
+            archive_path: path.to_string(),
+            inner_path: prefix,
+            format: "zip".to_string(),
+            entries,
+            total_size,
+        })
     }
-
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Zip.as_str().to_string(),
-        entries,
-        total_size,
-    })
 }
 
-// ============================================================================
-// TAR listing (existing)
-// ============================================================================
+// =======================
+// 7Z BACKEND
+// =======================
 
-fn list_tar_reader<R: Read>(
-    mut archive: tar::Archive<R>,
-    archive_path: &str,
-    inner_path: &str,
-    format: &str,
-) -> Result<ArchiveListing> {
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
+struct SevenZipBackend;
 
-    for entry_result in archive.entries().context("Error iterating TAR entries")? {
-        let entry = entry_result.context("Error reading TAR entry")?;
-        let path_raw = entry
-            .path()
-            .context("Invalid TAR entry path")?
-            .to_string_lossy()
-            .to_string();
-        let name = normalise_inner(&path_raw);
+impl ArchiveBackend for SevenZipBackend {
+    fn read_file(path: &str, inner: &str) -> Result<Vec<u8>> {
+        let output = Command::new("7z")
+            .args(["x", "-so", path, inner])
+            .output()?;
 
-        if name.is_empty() || name == "." {
-            continue;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "7z failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
-
-        let is_under_parent = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
-
-        if !is_under_parent || name == parent {
-            continue;
-        }
-
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&child_path)
-            .to_string();
-
-        let is_dir = entry.header().entry_type().is_dir()
-            || entry.header().entry_type() == tar::EntryType::Symlink && false;
-
-        let modified = entry
-            .header()
-            .mtime()
-            .unwrap_or(0) as i64;
-
-        if child_path == name {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: if is_dir {
-                    ArchiveEntryType::Directory
-                } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.header().size().unwrap_or(0),
-                compressed_size: 0,
-                modified,
-                compression: format.to_string(),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: format.to_string(),
-            });
-        }
+        Ok(output.stdout)
     }
 
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
+    fn extract(path: &str, dest: &str, files: &[String]) -> Result<Vec<String>> {
+        let mut args = vec![
+            "x".to_string(),
+            "-y".to_string(),
+            format!("-o{}", dest),
+        ];
+        args.push(path.to_string());
+        args.extend(files.iter().cloned());
 
-    let total_size = entries.iter().map(|e| e.size).sum();
+        let output = Command::new("7z").args(&args).output()?;
 
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: format.to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// 7Z listing
-// ============================================================================
-
-#[cfg(feature = "sevenz")]
-pub fn list_7z(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use sevenz_rust::Archive as SevenZArchive;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = SevenZArchive::read(file)
-        .context("Not a valid 7z archive")?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for entry in archive.entries() {
-        let name = normalise_inner(&entry.name);
-        if name.is_empty() {
-            continue;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "7z extraction failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
-
-        let is_child = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
-
-        if !is_child || name == parent {
-            continue;
-        }
-
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-        if child_path == name {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path.clone(),
-                entry_type: if entry.is_directory() {
-                    ArchiveEntryType::Directory
-                } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.size(),
-                compressed_size: entry.compressed_size(),
-                modified: entry.last_modified().unwrap_or(0) as i64,
-                compression: "7z".to_string(),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "7z".to_string(),
-            });
-        }
+        Ok(files.to_vec())
     }
 
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
+    fn list(path: &str, inner: &str) -> Result<ArchiveListing> {
+        // Use detailed listing to get metadata
+        let output = Command::new("7z")
+            .args(["l", "-slt", path])
+            .output()?;
 
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::SevenZip.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// RAR listing
-// ============================================================================
-
-#[cfg(feature = "rar")]
-pub fn list_rar(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use rar::Archive as RarArchive;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = RarArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid RAR archive: {}", e))?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for entry in archive.entries() {
-        let entry = entry.map_err(|e| anyhow::anyhow!("Error reading RAR entry: {}", e))?;
-        let name = normalise_inner(&entry.filename.to_string_lossy());
-        if name.is_empty() {
-            continue;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "7z list failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
-        let is_child = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
+        let text = String::from_utf8_lossy(&output.stdout);
+        let prefix = inner.replace('\\', "/");
 
-        if !is_child || name == parent {
-            continue;
-        }
+        let mut entries = Vec::new();
+        let mut current = None;
+        let mut in_entry = false;
 
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-        if child_path == name {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: if entry.is_directory() {
-                    ArchiveEntryType::Directory
-                } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.unpacked_size(),
-                compressed_size: entry.packed_size(),
-                modified: entry.last_modified().map(|t| t.timestamp()).unwrap_or(0),
-                compression: format!("{:?}", entry.compression()),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "RAR".to_string(),
-            });
-        }
-    }
-
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Rar.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// CAB listing
-// ============================================================================
-
-#[cfg(feature = "cab")]
-pub fn list_cab(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use cab::Cabinet;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = Cabinet::new(file)
-        .context("Not a valid CAB archive")?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for folder in archive.folder_entries() {
-        for file in folder.file_entries() {
-            let name = normalise_inner(file.name());
-            if name.is_empty() {
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                if let Some(entry_data) = current.take() {
+                    if let Some(entry) = parse_7z_entry(entry_data, &prefix) {
+                        entries.push(entry);
+                    }
+                }
+                in_entry = false;
                 continue;
             }
 
-            let is_child = if parent.is_empty() {
-                true
-            } else {
-                name == parent || name.starts_with(&format!("{}/", parent))
-            };
-
-            if !is_child || name == parent {
+            if line.starts_with("----------") {
+                in_entry = true;
+                current = Some(Vec::new());
                 continue;
             }
 
-            let child_path = direct_child_path(&name, &parent);
-            let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-            if child_path == name {
-                seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                    name: child_name,
-                    inner_path: child_path,
-                    entry_type: ArchiveEntryType::File,
-                    size: file.uncompressed_size(),
-                    compressed_size: file.compressed_size(),
-                    modified: 0,
-                    compression: format!("{:?}", folder.compression_type()),
-                });
+            if in_entry {
+                if let Some(ref mut data) = current {
+                    data.push(line.to_string());
+                }
             }
         }
-    }
 
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Cab.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// ARJ listing
-// ============================================================================
-
-#[cfg(feature = "arj")]
-pub fn list_arj(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use arj::Archive as ArjArchive;
-    use std::fs::File;
-    use std::io::BufReader;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    let mut reader = BufReader::new(file);
-    
-    let mut archive = ArjArchive::new(&mut reader)
-        .map_err(|e| anyhow::anyhow!("Not a valid ARJ archive: {}", e))?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for entry_result in archive.entries() {
-        let entry = entry_result
-            .map_err(|e| anyhow::anyhow!("Error reading ARJ entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() {
-            continue;
+        // Handle last entry
+        if let Some(entry_data) = current.take() {
+            if let Some(entry) = parse_7z_entry(entry_data, &prefix) {
+                entries.push(entry);
+            }
         }
 
-        let is_child = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
-
-        if !is_child || name == parent {
-            continue;
-        }
-
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-        if child_path == name {
-            let is_dir = entry.is_directory();
-            
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: if is_dir {
-                    ArchiveEntryType::Directory
+        // Filter to direct children of inner path
+        let filtered: Vec<_> = entries
+            .into_iter()
+            .filter(|e| {
+                if prefix.is_empty() {
+                    !e.inner_path.contains('/')
                 } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.size(),
-                compressed_size: entry.compressed_size(),
-                modified: entry.last_modified().map(|t| t.timestamp()).unwrap_or(0),
-                compression: format!("ARJ {:?}", entry.compression_method()),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "ARJ".to_string(),
-            });
-        }
-    }
-
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Arj.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// LZH listing
-// ============================================================================
-
-#[cfg(feature = "lzh")]
-pub fn list_lzh(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use lzh::LzhArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let archive = LzhArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid LZH archive: {}", e))?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for entry in archive.entries() {
-        let entry = entry
-            .map_err(|e| anyhow::anyhow!("Error reading LZH entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() {
-            continue;
-        }
-
-        let is_child = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
-
-        if !is_child || name == parent {
-            continue;
-        }
-
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-        if child_path == name {
-            let is_dir = entry.is_directory();
-            
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: if is_dir {
-                    ArchiveEntryType::Directory
-                } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.size(),
-                compressed_size: entry.compressed_size(),
-                modified: entry.last_modified().map(|t| t.timestamp()).unwrap_or(0),
-                compression: format!("LZH {:?}", entry.compression_method()),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "LZH".to_string(),
-            });
-        }
-    }
-
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Lzh.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// ACE listing
-// ============================================================================
-
-#[cfg(feature = "ace")]
-pub fn list_ace(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    use ace::AceArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let archive = AceArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid ACE archive: {}", e))?;
-    
-    let parent = normalise_inner(inner_path);
-    let mut seen: HashMap<String, ArchiveEntry> = HashMap::new();
-
-    for entry in archive.entries() {
-        let entry = entry
-            .map_err(|e| anyhow::anyhow!("Error reading ACE entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() {
-            continue;
-        }
-
-        let is_child = if parent.is_empty() {
-            true
-        } else {
-            name == parent || name.starts_with(&format!("{}/", parent))
-        };
-
-        if !is_child || name == parent {
-            continue;
-        }
-
-        let child_path = direct_child_path(&name, &parent);
-        let child_name = child_path.rsplit('/').next().unwrap_or(&child_path).to_string();
-
-        if child_path == name {
-            let is_dir = entry.is_directory();
-            
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: if is_dir {
-                    ArchiveEntryType::Directory
-                } else {
-                    ArchiveEntryType::File
-                },
-                size: entry.size(),
-                compressed_size: entry.compressed_size(),
-                modified: entry.last_modified().map(|t| t.timestamp()).unwrap_or(0),
-                compression: format!("ACE {:?}", entry.compression_method()),
-            });
-        } else {
-            seen.entry(child_path.clone()).or_insert_with(|| ArchiveEntry {
-                name: child_name,
-                inner_path: child_path,
-                entry_type: ArchiveEntryType::Directory,
-                size: 0,
-                compressed_size: 0,
-                modified: 0,
-                compression: "ACE".to_string(),
-            });
-        }
-    }
-
-    let mut entries: Vec<ArchiveEntry> = seen.into_values().collect();
-    entries.sort_by(|a, b| {
-        let ord = matches!(b.entry_type, ArchiveEntryType::Directory)
-            .cmp(&matches!(a.entry_type, ArchiveEntryType::Directory));
-        ord.then(a.name.cmp(&b.name))
-    });
-
-    let total_size = entries.iter().map(|e| e.size).sum();
-
-    Ok(ArchiveListing {
-        archive_path: archive_path.to_string(),
-        inner_path: parent,
-        format: ArchiveFormat::Ace.as_str().to_string(),
-        entries,
-        total_size,
-    })
-}
-
-// ============================================================================
-// Read archive file contents (existing)
-// ============================================================================
-
-pub fn read_zip_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    let mut zip = zip::ZipArchive::new(file).context("Not a valid ZIP archive")?;
-
-    let target = normalise_inner(inner_path);
-    let mut entry = zip.by_name(&target)
-        .or_else(|_| zip.by_name(&format!("{}/", target)))
-        .with_context(|| format!("Entry '{target}' not found in ZIP"))?;
-
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf).context("Error reading ZIP entry")?;
-    Ok(buf)
-}
-
-pub fn read_tar_file<R: Read>(
-    mut archive: tar::Archive<R>,
-    inner_path: &str,
-) -> Result<Vec<u8>> {
-    let target = normalise_inner(inner_path);
-    for entry_result in archive.entries().context("Error iterating TAR")? {
-        let mut entry = entry_result.context("Error reading TAR entry")?;
-        let path_raw = entry
-            .path()
-            .context("Invalid path")?
-            .to_string_lossy()
-            .to_string();
-        if normalise_inner(&path_raw) == target {
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).context("Error reading TAR entry data")?;
-            return Ok(buf);
-        }
-    }
-    bail!("Entry '{inner_path}' not found in archive");
-}
-
-#[cfg(feature = "sevenz")]
-pub fn read_7z_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use sevenz_rust::Archive as SevenZArchive;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = SevenZArchive::read(file)
-        .context("Not a valid 7z archive")?;
-    
-    let target = normalise_inner(inner_path);
-    for entry in archive.entries() {
-        if normalise_inner(&entry.name) == target {
-            let mut buf = Vec::new();
-            entry.read(&mut buf)?;
-            return Ok(buf);
-        }
-    }
-    bail!("Entry '{inner_path}' not found in 7z archive");
-}
-
-#[cfg(feature = "rar")]
-pub fn read_rar_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use rar::Archive as RarArchive;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = RarArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid RAR archive: {}", e))?;
-    
-    let target = normalise_inner(inner_path);
-    for entry in archive.entries() {
-        let entry = entry.map_err(|e| anyhow::anyhow!("Error reading RAR entry: {}", e))?;
-        if normalise_inner(&entry.filename.to_string_lossy()) == target {
-            let mut buf = Vec::new();
-            entry.read(&mut buf)?;
-            return Ok(buf);
-        }
-    }
-    bail!("Entry '{inner_path}' not found in RAR archive");
-}
-
-#[cfg(feature = "cab")]
-pub fn read_cab_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use cab::Cabinet;
-    
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = Cabinet::new(file)
-        .context("Not a valid CAB archive")?;
-    
-    let target = normalise_inner(inner_path);
-    let mut buf = Vec::new();
-    archive.read_file(&target, &mut buf)
-        .with_context(|| format!("Entry '{target}' not found in CAB archive"))?;
-    Ok(buf)
-}
-
-#[cfg(feature = "arj")]
-pub fn read_arj_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use arj::Archive as ArjArchive;
-    use std::fs::File;
-    use std::io::BufReader;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    let mut reader = BufReader::new(file);
-    
-    let mut archive = ArjArchive::new(&mut reader)
-        .map_err(|e| anyhow::anyhow!("Not a valid ARJ archive: {}", e))?;
-    
-    let target = normalise_inner(inner_path);
-    
-    for entry_result in archive.entries() {
-        let mut entry = entry_result
-            .map_err(|e| anyhow::anyhow!("Error reading ARJ entry: {}", e))?;
-        
-        if normalise_inner(&entry.filename().to_string_lossy()) == target {
-            let mut buf = Vec::new();
-            entry.read(&mut buf)
-                .map_err(|e| anyhow::anyhow!("Error reading ARJ entry data: {}", e))?;
-            return Ok(buf);
-        }
-    }
-    
-    bail!("Entry '{inner_path}' not found in ARJ archive");
-}
-
-#[cfg(feature = "lzh")]
-pub fn read_lzh_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use lzh::LzhArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = LzhArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid LZH archive: {}", e))?;
-    
-    let target = normalise_inner(inner_path);
-    
-    for entry in archive.entries() {
-        let mut entry = entry
-            .map_err(|e| anyhow::anyhow!("Error reading LZH entry: {}", e))?;
-        
-        if normalise_inner(&entry.filename().to_string_lossy()) == target {
-            let mut buf = Vec::new();
-            entry.read(&mut buf)
-                .map_err(|e| anyhow::anyhow!("Error reading LZH entry data: {}", e))?;
-            return Ok(buf);
-        }
-    }
-    
-    bail!("Entry '{inner_path}' not found in LZH archive");
-}
-
-#[cfg(feature = "ace")]
-pub fn read_ace_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    use ace::AceArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)
-        .with_context(|| format!("Cannot open {archive_path}"))?;
-    
-    let mut archive = AceArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid ACE archive: {}", e))?;
-    
-    let target = normalise_inner(inner_path);
-    
-    for entry in archive.entries() {
-        let mut entry = entry
-            .map_err(|e| anyhow::anyhow!("Error reading ACE entry: {}", e))?;
-        
-        if normalise_inner(&entry.filename().to_string_lossy()) == target {
-            let mut buf = Vec::new();
-            entry.read(&mut buf)
-                .map_err(|e| anyhow::anyhow!("Error reading ACE entry data: {}", e))?;
-            return Ok(buf);
-        }
-    }
-    
-    bail!("Entry '{inner_path}' not found in ACE archive");
-}
-
-// ============================================================================
-// Public dispatch: list_archive (updated with new formats)
-// ============================================================================
-
-pub fn list_archive(archive_path: &str, inner_path: &str) -> Result<ArchiveListing> {
-    let fmt = ArchiveFormat::detect(archive_path)
-        .with_context(|| format!("Unrecognised archive format: {archive_path}"))?;
-
-    match fmt {
-        // Existing formats
-        ArchiveFormat::Zip => list_zip(archive_path, inner_path),
-
-        ArchiveFormat::Tar => {
-            let f = std::fs::File::open(archive_path)?;
-            list_tar_reader(tar::Archive::new(f), archive_path, inner_path, "tar")
-        }
-
-        ArchiveFormat::TarGz => {
-            let f = std::fs::File::open(archive_path)?;
-            let gz = flate2::read::GzDecoder::new(f);
-            list_tar_reader(tar::Archive::new(gz), archive_path, inner_path, "tar.gz")
-        }
-
-        ArchiveFormat::TarBz2 => {
-            let f = std::fs::File::open(archive_path)?;
-            let bz = bzip2::read::BzDecoder::new(f);
-            list_tar_reader(tar::Archive::new(bz), archive_path, inner_path, "tar.bz2")
-        }
-
-        ArchiveFormat::TarXz => {
-            let f = std::fs::File::open(archive_path)?;
-            let xz = xz2::read::XzDecoder::new(f);
-            list_tar_reader(tar::Archive::new(xz), archive_path, inner_path, "tar.xz")
-        }
-
-        ArchiveFormat::TarZst => {
-            let f = std::fs::File::open(archive_path)?;
-            let zst = zstd::Decoder::new(f).context("zstd decoder error")?;
-            list_tar_reader(tar::Archive::new(zst), archive_path, inner_path, "tar.zst")
-        }
-
-        ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst => {
-            // Single-file compressed – present as a single-entry listing
-            let stem = Path::new(archive_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("file")
-                .to_string();
-
-            let file_size = std::fs::metadata(archive_path)?.len();
-
-            let entry = ArchiveEntry {
-                name: stem.clone(),
-                inner_path: stem,
-                entry_type: ArchiveEntryType::File,
-                size: file_size,
-                compressed_size: file_size,
-                modified: 0,
-                compression: fmt.as_str().to_string(),
-            };
-
-            Ok(ArchiveListing {
-                archive_path: archive_path.to_string(),
-                inner_path: String::new(),
-                format: fmt.as_str().to_string(),
-                entries: vec![entry],
-                total_size: file_size,
+                    e.inner_path.starts_with(&format!("{}/", prefix))
+                        && !e.inner_path[prefix.len() + 1..].contains('/')
+                }
             })
-        }
-        
-        // New formats
-        #[cfg(feature = "sevenz")]
-        ArchiveFormat::SevenZip => list_7z(archive_path, inner_path),
-        
-        #[cfg(feature = "rar")]
-        ArchiveFormat::Rar => list_rar(archive_path, inner_path),
-        
-        #[cfg(feature = "cab")]
-        ArchiveFormat::Cab => list_cab(archive_path, inner_path),
-        
-        #[cfg(feature = "arj")]
-        ArchiveFormat::Arj => list_arj(archive_path, inner_path),
-        
-        #[cfg(feature = "lzh")]
-        ArchiveFormat::Lzh => list_lzh(archive_path, inner_path),
-        
-        #[cfg(feature = "ace")]
-        ArchiveFormat::Ace => list_ace(archive_path, inner_path),
-        
-        // Fallback for when features are disabled
-        ArchiveFormat::SevenZip | ArchiveFormat::Rar | ArchiveFormat::Cab 
-        | ArchiveFormat::Arj | ArchiveFormat::Lzh | ArchiveFormat::Ace => {
-            bail!("Support for {} format not compiled in", fmt.as_str())
-        }
+            .collect();
+
+        let total_size = filtered.iter().map(|e| e.size).sum();
+
+        Ok(ArchiveListing {
+            archive_path: path.to_string(),
+            inner_path: prefix,
+            format: "7z".to_string(),
+            entries: filtered,
+            total_size,
+        })
     }
 }
 
-// ============================================================================
-// Public dispatch: read_archive_file (updated with new formats)
-// ============================================================================
+fn parse_7z_entry(lines: Vec<String>, prefix: &str) -> Option<ArchiveEntry> {
+    let mut path = None;
+    let mut size = 0;
+    let mut compressed = 0;
+    let mut modified = 0;
+    let mut is_dir = false;
 
-pub fn read_archive_file(archive_path: &str, inner_path: &str) -> Result<Vec<u8>> {
-    let fmt = ArchiveFormat::detect(archive_path)
-        .with_context(|| format!("Unrecognised archive format: {archive_path}"))?;
+    for line in lines {
+        if let Some((key, value)) = line.split_once(" = ") {
+            match key {
+                "Path" => path = Some(value.to_string()),
+                "Size" => size = value.parse().unwrap_or(0),
+                "Packed Size" => compressed = value.parse().unwrap_or(0),
+                "Modified" => {
+                    if let Ok(dt) = chrono::DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+                        modified = dt.timestamp();
+                    }
+                }
+                "Folder" => is_dir = value == "+",
+                _ => {}
+            }
+        }
+    }
+
+    let full_path = path?;
+    let name = full_path.split('/').last().unwrap_or(&full_path).to_string();
+    let inner_path = full_path.replace('\\', "/");
+
+    // Skip if not under prefix
+    if !prefix.is_empty() && !inner_path.starts_with(&format!("{}/", prefix)) && inner_path != *prefix {
+        return None;
+    }
+
+    Some(ArchiveEntry {
+        name,
+        inner_path,
+        entry_type: if is_dir {
+            ArchiveEntryType::Directory
+        } else {
+            ArchiveEntryType::File
+        },
+        size,
+        compressed_size: compressed,
+        modified,
+        compression: "7z".to_string(),
+    })
+}
+
+// =======================
+// Public API
+// =======================
+
+pub fn read_archive_file(path: &str, inner: &str) -> Result<Vec<u8>> {
+    let fmt = ArchiveFormat::detect(path)
+        .ok_or_else(|| anyhow!("Unsupported archive format"))?;
 
     match fmt {
-        // Existing formats
-        ArchiveFormat::Zip => read_zip_file(archive_path, inner_path),
-
-        ArchiveFormat::Tar => {
-            let f = std::fs::File::open(archive_path)?;
-            read_tar_file(tar::Archive::new(f), inner_path)
-        }
-
-        ArchiveFormat::TarGz => {
-            let f = std::fs::File::open(archive_path)?;
-            let gz = flate2::read::GzDecoder::new(f);
-            read_tar_file(tar::Archive::new(gz), inner_path)
-        }
-
-        ArchiveFormat::TarBz2 => {
-            let f = std::fs::File::open(archive_path)?;
-            let bz = bzip2::read::BzDecoder::new(f);
-            read_tar_file(tar::Archive::new(bz), inner_path)
-        }
-
-        ArchiveFormat::TarXz => {
-            let f = std::fs::File::open(archive_path)?;
-            let xz = xz2::read::XzDecoder::new(f);
-            read_tar_file(tar::Archive::new(xz), inner_path)
-        }
-
-        ArchiveFormat::TarZst => {
-            let f = std::fs::File::open(archive_path)?;
-            let zst = zstd::Decoder::new(f)?;
-            read_tar_file(tar::Archive::new(zst), inner_path)
-        }
-
-        ArchiveFormat::Gz => {
-            let f = std::fs::File::open(archive_path)?;
-            let mut gz = flate2::read::GzDecoder::new(f);
-            let mut buf = Vec::new();
-            gz.read_to_end(&mut buf)?;
-            Ok(buf)
-        }
-
-        ArchiveFormat::Bz2 => {
-            let f = std::fs::File::open(archive_path)?;
-            let mut bz = bzip2::read::BzDecoder::new(f);
-            let mut buf = Vec::new();
-            bz.read_to_end(&mut buf)?;
-            Ok(buf)
-        }
-
-        ArchiveFormat::Xz => {
-            let f = std::fs::File::open(archive_path)?;
-            let mut xz = xz2::read::XzDecoder::new(f);
-            let mut buf = Vec::new();
-            xz.read_to_end(&mut buf)?;
-            Ok(buf)
-        }
-
-        ArchiveFormat::Zst => {
-            let f = std::fs::File::open(archive_path)?;
-            let mut zst = zstd::Decoder::new(f)?;
-            let mut buf = Vec::new();
-            zst.read_to_end(&mut buf)?;
-            Ok(buf)
-        }
-        
-        // New formats
-        #[cfg(feature = "sevenz")]
-        ArchiveFormat::SevenZip => read_7z_file(archive_path, inner_path),
-        
-        #[cfg(feature = "rar")]
-        ArchiveFormat::Rar => read_rar_file(archive_path, inner_path),
-        
-        #[cfg(feature = "cab")]
-        ArchiveFormat::Cab => read_cab_file(archive_path, inner_path),
-        
-        #[cfg(feature = "arj")]
-        ArchiveFormat::Arj => read_arj_file(archive_path, inner_path),
-
-        #[cfg(feature = "lzh")]
-        ArchiveFormat::Lzh => read_lzh_file(archive_path, inner_path),
-
-        #[cfg(feature = "ace")]
-        ArchiveFormat::Ace => read_ace_file(archive_path, inner_path),
+        ArchiveFormat::Zip => ZipBackend::read_file(path, inner),
+        ArchiveFormat::SevenZip => SevenZipBackend::read_file(path, inner),
     }
 }
 
-// ============================================================================
-// Public dispatch: extract_archive (updated with new formats)
-// ============================================================================
-
-pub fn extract_archive(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    let fmt = ArchiveFormat::detect(archive_path)
-        .with_context(|| format!("Unrecognised archive format: {archive_path}"))?;
-
-    std::fs::create_dir_all(destination)
-        .with_context(|| format!("Cannot create destination: {destination}"))?;
+pub fn extract_archive(path: &str, dest: &str, files: &[String]) -> Result<Vec<String>> {
+    let fmt = ArchiveFormat::detect(path)
+        .ok_or_else(|| anyhow!("Unsupported archive format"))?;
 
     match fmt {
-        // Existing formats
-        ArchiveFormat::Zip => extract_zip(archive_path, destination, inner_paths),
-        
-        ArchiveFormat::Tar => {
-            let f = std::fs::File::open(archive_path)?;
-            extract_tar(tar::Archive::new(f), destination, inner_paths)
-        }
-        
-        ArchiveFormat::TarGz => {
-            let f = std::fs::File::open(archive_path)?;
-            extract_tar(tar::Archive::new(flate2::read::GzDecoder::new(f)), destination, inner_paths)
-        }
-        
-        ArchiveFormat::TarBz2 => {
-            let f = std::fs::File::open(archive_path)?;
-            extract_tar(tar::Archive::new(bzip2::read::BzDecoder::new(f)), destination, inner_paths)
-        }
-        
-        ArchiveFormat::TarXz => {
-            let f = std::fs::File::open(archive_path)?;
-            extract_tar(tar::Archive::new(xz2::read::XzDecoder::new(f)), destination, inner_paths)
-        }
-        
-        ArchiveFormat::TarZst => {
-            let f = std::fs::File::open(archive_path)?;
-            extract_tar(tar::Archive::new(zstd::Decoder::new(f)?), destination, inner_paths)
-        }
-        
-        ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst => {
-            // Single-file: decompress to destination/stem
-            let stem = Path::new(archive_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("output")
-                .to_string();
-            let out_path = Path::new(destination).join(&stem);
-            let data = read_archive_file(archive_path, &stem)?;
-            std::fs::write(&out_path, &data)?;
-            Ok(vec![out_path.to_string_lossy().to_string()])
-        }
-        
-        // New formats - delegate to specific extractors
-        #[cfg(feature = "sevenz")]
-        ArchiveFormat::SevenZip => extract_7z(archive_path, destination, inner_paths),
-        
-        #[cfg(feature = "rar")]
-        ArchiveFormat::Rar => extract_rar(archive_path, destination, inner_paths),
-        
-        #[cfg(feature = "cab")]
-        ArchiveFormat::Cab => extract_cab(archive_path, destination, inner_paths),
-        
-        #[cfg(feature = "arj")]
-        ArchiveFormat::Arj => extract_arj(archive_path, destination, inner_paths),
-
-        #[cfg(feature = "lzh")]
-        ArchiveFormat::Lzh => extract_lzh(archive_path, destination, inner_paths),
-
-        #[cfg(feature = "ace")]
-        ArchiveFormat::Ace => extract_ace(archive_path, destination, inner_paths),
+        ArchiveFormat::Zip => ZipBackend::extract(path, dest, files),
+        ArchiveFormat::SevenZip => SevenZipBackend::extract(path, dest, files),
     }
 }
 
-// ============================================================================
-// Extraction helpers for existing formats
-// ============================================================================
+pub fn list_archive(path: &str, inner: &str) -> Result<ArchiveListing> {
+    let fmt = ArchiveFormat::detect(path)
+        .ok_or_else(|| anyhow!("Unsupported archive format"))?;
 
-fn extract_zip(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    let file = std::fs::File::open(archive_path)?;
-    let mut zip = zip::ZipArchive::new(file)?;
-    let mut extracted = Vec::new();
-
-    for i in 0..zip.len() {
-        let mut entry = zip.by_index(i)?;
-        let name = normalise_inner(entry.name());
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut f = std::fs::File::create(&out)?;
-            io::copy(&mut entry, &mut f)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
+    match fmt {
+        ArchiveFormat::Zip => ZipBackend::list(path, inner),
+        ArchiveFormat::SevenZip => SevenZipBackend::list(path, inner),
     }
-    Ok(extracted)
-}
-
-fn extract_tar<R: Read>(mut archive: tar::Archive<R>, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    let mut extracted = Vec::new();
-
-    for entry_result in archive.entries()? {
-        let mut entry = entry_result?;
-        let path_raw = entry.path()?.to_string_lossy().to_string();
-        let name = normalise_inner(&path_raw);
-        if name.is_empty() || name == "." { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.header().entry_type().is_dir() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut f = std::fs::File::create(&out)?;
-            io::copy(&mut entry, &mut f)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-// ============================================================================
-// New format extraction helpers
-// ============================================================================
-
-#[cfg(feature = "sevenz")]
-fn extract_7z(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use sevenz_rust::Archive as SevenZArchive;
-    
-    let file = std::fs::File::open(archive_path)?;
-    let mut archive = SevenZArchive::read(file)?;
-    let mut extracted = Vec::new();
-
-    for entry in archive.entries() {
-        let name = normalise_inner(&entry.name);
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_directory() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            entry.read(&mut data)?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-#[cfg(feature = "rar")]
-fn extract_rar(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use rar::Archive as RarArchive;
-    
-    let file = std::fs::File::open(archive_path)?;
-    let mut archive = RarArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid RAR archive: {}", e))?;
-    let mut extracted = Vec::new();
-
-    for entry in archive.entries() {
-        let mut entry = entry.map_err(|e| anyhow::anyhow!("Error reading RAR entry: {}", e))?;
-        let name = normalise_inner(&entry.filename.to_string_lossy());
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_directory() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            entry.read(&mut data)?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-#[cfg(feature = "cab")]
-fn extract_cab(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use cab::Cabinet;
-    
-    let file = std::fs::File::open(archive_path)?;
-    let mut archive = Cabinet::new(file)?;
-    let mut extracted = Vec::new();
-
-    for folder in archive.folder_entries() {
-        for file in folder.file_entries() {
-            let name = normalise_inner(file.name());
-            if name.is_empty() { continue; }
-
-            if !inner_paths.is_empty() {
-                let matches = inner_paths.iter().any(|p| {
-                    let np = normalise_inner(p);
-                    name == np || name.starts_with(&format!("{}/", np))
-                });
-                if !matches { continue; }
-            }
-
-            let out = Path::new(destination).join(&name);
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            archive.read_file(file.name(), &mut data)?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-// ============================================================================
-// Extract ARJ
-// ============================================================================
-
-#[cfg(feature = "arj")]
-fn extract_arj(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use arj::Archive as ArjArchive;
-    use std::fs::File;
-    use std::io::BufReader;
-    
-    let file = File::open(archive_path)?;
-    let mut reader = BufReader::new(file);
-    
-    let mut archive = ArjArchive::new(&mut reader)
-        .map_err(|e| anyhow::anyhow!("Not a valid ARJ archive: {}", e))?;
-    let mut extracted = Vec::new();
-
-    for entry_result in archive.entries() {
-        let mut entry = entry_result
-            .map_err(|e| anyhow::anyhow!("Error reading ARJ entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_directory() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            entry.read(&mut data)
-                .map_err(|e| anyhow::anyhow!("Error reading ARJ entry data: {}", e))?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-// ============================================================================
-// Extract LZH
-// ============================================================================
-
-#[cfg(feature = "lzh")]
-fn extract_lzh(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use lzh::LzhArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)?;
-    
-    let mut archive = LzhArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid LZH archive: {}", e))?;
-    let mut extracted = Vec::new();
-
-    for entry_result in archive.entries() {
-        let mut entry = entry_result
-            .map_err(|e| anyhow::anyhow!("Error reading LZH entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_directory() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            entry.read(&mut data)
-                .map_err(|e| anyhow::anyhow!("Error reading LZH entry data: {}", e))?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-// ============================================================================
-// Extract ACE
-// ============================================================================
-
-#[cfg(feature = "ace")]
-fn extract_ace(archive_path: &str, destination: &str, inner_paths: &[String]) -> Result<Vec<String>> {
-    use ace::AceArchive;
-    use std::fs::File;
-    
-    let file = File::open(archive_path)?;
-    
-    let mut archive = AceArchive::new(file)
-        .map_err(|e| anyhow::anyhow!("Not a valid ACE archive: {}", e))?;
-    let mut extracted = Vec::new();
-
-    for entry_result in archive.entries() {
-        let mut entry = entry_result
-            .map_err(|e| anyhow::anyhow!("Error reading ACE entry: {}", e))?;
-        
-        let name = normalise_inner(&entry.filename().to_string_lossy());
-        if name.is_empty() { continue; }
-
-        if !inner_paths.is_empty() {
-            let matches = inner_paths.iter().any(|p| {
-                let np = normalise_inner(p);
-                name == np || name.starts_with(&format!("{}/", np))
-            });
-            if !matches { continue; }
-        }
-
-        let out = Path::new(destination).join(&name);
-        if entry.is_directory() {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut data = Vec::new();
-            entry.read(&mut data)
-                .map_err(|e| anyhow::anyhow!("Error reading ACE entry data: {}", e))?;
-            std::fs::write(&out, &data)?;
-            extracted.push(out.to_string_lossy().to_string());
-        }
-    }
-    Ok(extracted)
-}
-
-// ============================================================================
-// is_archive helper (for Angular integration)
-// ============================================================================
-
-pub fn is_archive_extension(path: &str) -> bool {
-    ArchiveFormat::detect(path).is_some()
 }
